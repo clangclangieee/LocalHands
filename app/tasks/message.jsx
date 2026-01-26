@@ -1,73 +1,160 @@
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, Pressable } from "react-native";
-import { useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  SafeAreaView,
+  Image,
+  Pressable,
+} from "react-native";
+import { useRouter } from "expo-router";
 
 // Sample messages
 const messages = [
-  { id: 1, sender: "Karl", text: "Mana ang imong gipa buhat...", image: "https://i.pinimg.com/736x/ea/1c/06/ea1c06737ff473631776adaeb8a1f21f.jpg" },
-  { id: 2, sender: "MakasarilingIsda", text: "Okay raba nga ikaw ray mo...", image: "https://i.pinimg.com/736x/85/54/ba/8554ba20ea5ee05429de18d832a33726.jpg", isMine: true },
-  { id: 3, sender: "Belen", text: "Okay na dae...Thank you", image: "https://i.pinimg.com/736x/d0/64/d5/d064d5297876fa933c2bd8d3ff4443df.jpg" },
-  { id: 4, sender: "MamiLovesPandesal", text: "you: No problem po", image: "https://i.pinimg.com/1200x/81/fb/02/81fb02013b09451f8bb893363737178e.jpg", isMine: true },
-  { id: 5, sender: "WeBearBears", text: "", image: "https://i.pinimg.com/736x/31/4f/33/314f3388f7da810b7cb2cfd00faa1c15.jpg" },
+  {
+    id: 1,
+    sender: "Karl",
+    text: "No problem po",
+    image:
+      "https://i.pinimg.com/736x/ea/1c/06/ea1c06737ff473631776adaeb8a1f21f.jpg",
+  },
+  {
+    id: 2,
+    sender: "MakasarilingIsda",
+    text: "Okay ra mga 1 lang?",
+    image:
+      "https://i.pinimg.com/736x/85/54/ba/8554ba20ea5ee05429de18d832a33726.jpg",
+    isMine: true,
+  },
+  {
+    id: 3,
+    sender: "Belen",
+    text: "Okay na dae...Thank you",
+    image:
+      "https://i.pinimg.com/736x/d0/64/d5/d064d5297876fa933c2bd8d3ff4443df.jpg",
+  },
+  {
+    id: 4,
+    sender: "MamiLovesPandesal",
+    text: "You: Yes po i have time",
+    image:
+      "https://i.pinimg.com/1200x/81/fb/02/81fb02013b09451f8bb893363737178e.jpg",
+    isMine: true,
+  },
+  {
+    id: 5,
+    sender: "WeBearBears",
+    text: "Can you help me with my presentaion please?",
+    image:
+      "https://i.pinimg.com/736x/31/4f/33/314f3388f7da810b7cb2cfd00faa1c15.jpg",
+  },
 ];
 
 // Friends list
 const friends = [
-  { id: 1, name: "Karl", image: "https://i.pinimg.com/736x/ea/1c/06/ea1c06737ff473631776adaeb8a1f21f.jpg" },
-  { id: 2, name: "MakasarilingIsda", image: "https://i.pinimg.com/736x/85/54/ba/8554ba20ea5ee05429de18d832a33726.jpg" },
-  { id: 3, name: "Belen", image: "https://i.pinimg.com/736x/d0/64/d5/d064d5297876fa933c2bd8d3ff4443df.jpg" },
-  { id: 4, name: "WeBearBears", image: "https://i.pinimg.com/736x/31/4f/33/314f3388f7da810b7cb2cfd00faa1c15.jpg" },
-  { id: 5, name: "Felixia", image: "https://i.pinimg.com/736x/2d/c1/d8/2dc1d839e486aad7a9028f8afbb86685.jpg" },
-  { id: 6, name: "MamiLovesPandesal", image: "https://i.pinimg.com/1200x/81/fb/02/81fb02013b09451f8bb893363737178e.jpg" },
-  { id: 7, name: "Bibble", image: "https://i.pinimg.com/736x/98/a2/4c/98a24c89af2561c879abe63c8c1f17a2.jpg" },
-  { id: 8, name: "SussyChicky", image: "https://i.pinimg.com/736x/39/9a/39/399a39dc09ef5e1e9299bf3cca5537d8.jpg" },
+  {
+    id: 1,
+    name: "Karl",
+    image:
+      "https://i.pinimg.com/736x/ea/1c/06/ea1c06737ff473631776adaeb8a1f21f.jpg",
+  },
+  {
+    id: 2,
+    name: "MakasarilingIsda",
+    image:
+      "https://i.pinimg.com/736x/85/54/ba/8554ba20ea5ee05429de18d832a33726.jpg",
+  },
+  {
+    id: 3,
+    name: "Belen",
+    image:
+      "https://i.pinimg.com/736x/d0/64/d5/d064d5297876fa933c2bd8d3ff4443df.jpg",
+  },
+  {
+    id: 4,
+    name: "WeBearBears",
+    image:
+      "https://i.pinimg.com/736x/31/4f/33/314f3388f7da810b7cb2cfd00faa1c15.jpg",
+  },
+  {
+    id: 5,
+    name: "Felixia",
+    image:
+      "https://i.pinimg.com/736x/2d/c1/d8/2dc1d839e486aad7a9028f8afbb86685.jpg",
+  },
+  {
+    id: 6,
+    name: "MamiLovesPandesal",
+    image:
+      "https://i.pinimg.com/1200x/81/fb/02/81fb02013b09451f8bb893363737178e.jpg",
+  },
+  {
+    id: 7,
+    name: "Bibble",
+    image:
+      "https://i.pinimg.com/736x/98/a2/4c/98a24c89af2561c879abe63c8c1f17a2.jpg",
+  },
+  {
+    id: 8,
+    name: "SussyChicky",
+    image:
+      "https://i.pinimg.com/736x/39/9a/39/399a39dc09ef5e1e9299bf3cca5537d8.jpg",
+  },
 ];
 
 export default function Message() {
-  const [selectedMessage, setSelectedMessage] = useState(null);
+  const router = useRouter();
 
-  const handlePress = (id) => {
-    setSelectedMessage(selectedMessage === id ? null : id);
+  const goToChat = (name) => {
+    router.push({
+      pathname: "/chat/[name]",
+      params: { name },
+    });
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.header}>Messages</Text>
 
-      {/* Single vertical ScrollView for friends + messages */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Friends row centered */}
+        {/* Friends Row */}
         <View style={styles.friendsRow}>
           {friends.map((friend) => (
-            <View key={friend.id} style={styles.friend}>
-              <Image source={{ uri: friend.image }} style={styles.friendImage} />
+            <Pressable
+              key={friend.id}
+              style={styles.friend}
+              onPress={() => goToChat(friend.name)}
+            >
+              <Image
+                source={{ uri: friend.image }}
+                style={styles.friendImage}
+              />
               <Text style={styles.friendName} numberOfLines={1}>
                 {friend.name}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
 
-        {/* Chat messages */}
-        {messages.map((msg) => {
-          const isSelected = selectedMessage === msg.id;
-          return (
-            <Pressable
-              key={msg.id}
-              onPress={() => handlePress(msg.id)}
-              style={[
-                styles.messageContainer,
-                msg.isMine ? styles.myMessageContainer : styles.otherMessageContainer,
-                isSelected && styles.selectedMessage,
-              ]}
-            >
-              <Image source={{ uri: msg.image }} style={styles.profileImage} />
-              <View style={{ marginLeft: 15, flex: 1 }}>
-                <Text style={styles.senderName}>{msg.sender}</Text>
-                <Text style={styles.messageText}>{msg.text}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
+        {/* Message List */}
+        {messages.map((msg) => (
+          <Pressable
+            key={msg.id}
+            onPress={() => goToChat(msg.sender)}
+            style={[
+              styles.messageContainer,
+              msg.isMine
+                ? styles.myMessageContainer
+                : styles.otherMessageContainer,
+            ]}
+          >
+            <Image source={{ uri: msg.image }} style={styles.profileImage} />
+            <View style={{ marginLeft: 15, flex: 1 }}>
+              <Text style={styles.senderName}>{msg.sender}</Text>
+              <Text style={styles.messageText}>{msg.text}</Text>
+            </View>
+          </Pressable>
+        ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -81,8 +168,8 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 28,
     fontWeight: "bold",
-    marginTop: 15,      // optional, space from top of screen
-    marginBottom: 25,   // <- this adds space between header and friends
+    marginTop: 15,
+    marginBottom: 25,
     textAlign: "center",
   },
   scrollContent: {
@@ -91,8 +178,8 @@ const styles = StyleSheet.create({
   },
   friendsRow: {
     flexDirection: "row",
-    justifyContent: "center", // center friends horizontally
-    flexWrap: "wrap",          // wrap to next line if needed
+    justifyContent: "center",
+    flexWrap: "wrap",
     marginBottom: 20,
   },
   friend: {
@@ -129,10 +216,6 @@ const styles = StyleSheet.create({
   otherMessageContainer: {
     backgroundColor: "#CBAACB",
     borderLeftColor: "#FFC5BF",
-  },
-  selectedMessage: {
-    opacity: 0.7,
-    transform: [{ scale: 1.02 }],
   },
   senderName: {
     fontWeight: "bold",
