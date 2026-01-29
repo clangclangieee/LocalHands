@@ -1,23 +1,42 @@
+// /app/tasks/_layout.jsx
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useEffect } from "react";
+import * as ScreenCapture from "expo-screen-capture";
 
 export default function TasksLayout() {
+  useEffect(() => {
+    // ✅ Allow screenshots on all screens under /tasks
+    ScreenCapture.allowScreenCaptureAsync();
+  }, []);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: "#FFC5BF", height: 60 },
-        tabBarActiveTintColor: "#0041C2",
+
+        tabBarStyle: {
+          backgroundColor: "#FFC5BF",
+          height: 70,
+          paddingBottom: 15,
+          paddingTop: 6,
+        },
+
+        tabBarActiveTintColor: "#8FCACA",
         tabBarInactiveTintColor: "#555",
+
+        // 👇 tab label below the icon
+        tabBarLabelPosition: "below-icon",
+        tabBarLabelStyle: {
+          fontSize: 12,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
         }}
       />
 
@@ -25,9 +44,7 @@ export default function TasksLayout() {
         name="search"
         options={{
           title: "Search",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <Ionicons name="search" size={24} color={color} />,
         }}
       />
 
@@ -35,9 +52,7 @@ export default function TasksLayout() {
         name="create"
         options={{
           title: "Create",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={28} color={color} />,
         }}
       />
 
@@ -45,9 +60,7 @@ export default function TasksLayout() {
         name="message"
         options={{
           title: "Messages",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <Ionicons name="chatbubble" size={24} color={color} />,
         }}
       />
 
@@ -55,9 +68,7 @@ export default function TasksLayout() {
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
         }}
       />
     </Tabs>

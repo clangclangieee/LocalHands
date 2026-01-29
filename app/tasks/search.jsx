@@ -90,6 +90,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     marginBottom: 20,
+    marginTop: 40,
   },
 
   input: {
@@ -109,10 +110,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-
     height: 110,
-
-    /* 🔒 prevents stretching */
     width: 110,
     maxWidth: 110,
   },
@@ -131,8 +129,8 @@ const styles = StyleSheet.create({
   },
 
   icon: {
-    width: 28,
-    height: 28,
+    width: 35,
+    height: 35,
     resizeMode: "contain",
   },
 
@@ -140,6 +138,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     textAlign: "center",
-    marginTop: 4,
+    marginTop: 20,
   },
 });

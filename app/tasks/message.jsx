@@ -117,8 +117,12 @@ export default function Message() {
       <Text style={styles.header}>Messages</Text>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Friends Row */}
-        <View style={styles.friendsRow}>
+        {/* Friends Row - Horizontal Scroll */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.friendsRow}
+        >
           {friends.map((friend) => (
             <Pressable
               key={friend.id}
@@ -134,7 +138,7 @@ export default function Message() {
               </Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Message List */}
         {messages.map((msg) => (
@@ -168,24 +172,20 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 28,
     fontWeight: "bold",
-    marginTop: 15,
-    marginBottom: 25,
+    marginTop: 40,
+    marginBottom: 15,
     textAlign: "center",
   },
   scrollContent: {
     paddingBottom: 20,
-    paddingHorizontal: 10,
   },
   friendsRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    flexWrap: "wrap",
-    marginBottom: 20,
+    paddingHorizontal: 10,
+    paddingBottom: 15,
   },
   friend: {
     alignItems: "center",
-    marginHorizontal: 10,
-    marginBottom: 10,
+    marginRight: 15,
   },
   friendImage: {
     width: 60,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderLeftWidth: 4,
     marginBottom: 15,
-    marginHorizontal: 5,
+    marginHorizontal: 10,
   },
   myMessageContainer: {
     backgroundColor: "#F3B0C3",

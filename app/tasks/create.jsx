@@ -5,7 +5,7 @@ import DropDownPicker from "react-native-dropdown-picker";
 export default function CreateTask() {
   const [choreOpen, setChoreOpen] = useState(false);
   const [choreValue, setChoreValue] = useState(null);
-  const [choreItems, setChoreItems] = useState([ 
+  const [choreItems, setChoreItems] = useState([
     { label: "Cleaning", value: "cleaning" },
     { label: "Small Repairs", value: "repairs" },
     { label: "Groceries", value: "groceries" },
@@ -19,9 +19,7 @@ export default function CreateTask() {
   ]);
 
   const handlePost = () => {
-    console.log("Task Posted:", {
-      chore: choreValue,
-    });
+    console.log("Task Posted:", { chore: choreValue });
     // Add your logic to submit task here
   };
 
@@ -37,6 +35,9 @@ export default function CreateTask() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.form}>
+          {/* Header */}
+          <Text style={styles.header}>Add a Chore</Text>
+
           {/* Chore Dropdown */}
           <DropDownPicker
             open={choreOpen}
@@ -86,33 +87,21 @@ export default function CreateTask() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#D4F0F0" },
-  scrollContainer: { paddingBottom: 20 },
-  form: { padding: 20, paddingTop: 60 }, // space at top
-  dropdown: {
-    backgroundColor: "#FFF",
-    borderRadius: 10,
-    borderColor: "#DDD",
-    height: 50,
+  container: { 
+    flex: 1, 
+    backgroundColor: "#D4F0F0" 
   },
-  dropdownContainer: {
-    backgroundColor: "#FFF",
-    borderRadius: 10,
-    borderColor: "#DDD",
+  scrollContainer: { 
+    paddingBottom: 20 
   },
-  input: {
-    backgroundColor: "#FFF",
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
-    fontStyle: "italic",
+  form: { 
+    padding: 20, 
+    paddingTop: 40 
   },
-  button: {
-    backgroundColor: "#8FCACA",
-    padding: 15,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 10,
-  },
+  header: { fontSize: 28, fontWeight: "bold", marginBottom: 20, color: "#333", textAlign:"center", }, // header style
+  dropdown: { backgroundColor: "#FFF", borderRadius: 10, borderColor: "#DDD", height: 50 },
+  dropdownContainer: { backgroundColor: "#FFF", borderRadius: 10, borderColor: "#DDD" },
+  input: { backgroundColor: "#FFF", padding: 12, borderRadius: 10, marginBottom: 12, fontStyle: "italic" },
+  button: { backgroundColor: "#8FCACA", padding: 15, borderRadius: 12, alignItems: "center", marginTop: 10 },
   buttonText: { fontWeight: "bold", fontSize: 20 },
 });

@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     height: 54,                    // ⭐ taller input
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#FFFFFF",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     fontSize: 16,
     marginBottom: 20,

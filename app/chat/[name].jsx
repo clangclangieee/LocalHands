@@ -166,6 +166,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 15,
     backgroundColor: "#FFC5BF",
+    marginTop: 40,
   },
   headerImage: {
     width: 40,
