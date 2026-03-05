@@ -3,11 +3,13 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect } from "react";
 import * as ScreenCapture from "expo-screen-capture";
+import { Platform } from "react-native";
 
 export default function TasksLayout() {
   useEffect(() => {
-    // ✅ Allow screenshots on all screens under /tasks
-    ScreenCapture.allowScreenCaptureAsync();
+    if (Platform.OS !== "web") {
+      ScreenCapture.allowScreenCaptureAsync();
+    }
   }, []);
 
   return (

@@ -3,11 +3,13 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import * as ScreenCapture from "expo-screen-capture";
+import { Platform } from "react-native";
 
 export default function RootLayout() {
   useEffect(() => {
-    // ✅ Allow screenshots globally for all screens
-    ScreenCapture.allowScreenCaptureAsync();
+    if (Platform.OS !== "web") {
+      ScreenCapture.allowScreenCaptureAsync();
+    }
   }, []);
 
   return (
