@@ -28,6 +28,7 @@ export default function Search() {
   const [query, setQuery] = useState("");
   const router = useRouter();
 
+  // Filters the grid icons as the user types
   const filtered = categories.filter((item) =>
     item.name.toLowerCase().includes(query.toLowerCase())
   );
@@ -38,7 +39,7 @@ export default function Search() {
       <View style={styles.searchWrapper}>
         <TextInput
           style={styles.input}
-          placeholder="Search username..."
+          placeholder="Search categories..."
           value={query}
           onChangeText={setQuery}
         />
@@ -50,13 +51,15 @@ export default function Search() {
         data={filtered}
         numColumns={3}
         keyExtractor={(item) => item.id}
-
-        // 🔑 THIS fixes the stretched "Other Tasks" on web
         columnWrapperStyle={styles.row}
-
         renderItem={({ item }) => (
           <Pressable
-            onPress={() => router.push(`/category/${item.id}`)}
+            // 🔑 IMPORTANT: This pushes to the category filter screen 
+            // We pass 'item.name' because that matches what you save in CreateTask
+            onPress={() => router.push({
+                pathname: "/category/[type]",
+                params: { type: item.name }
+            })}
             style={({ pressed }) => [
               styles.card,
               pressed && styles.pressed,
@@ -82,7 +85,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#D4F0F0",
     padding: 20,
   },
-
   searchWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -92,18 +94,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     marginTop: 40,
   },
-
   input: {
     flex: 1,
     fontSize: 16,
     marginRight: 8,
   },
-
-  /* 🔑 Centers cards per row on WEB */
   row: {
     justifyContent: "center",
   },
-
   card: {
     backgroundColor: "#F7AFC4",
     margin: 6,
@@ -114,12 +112,10 @@ const styles = StyleSheet.create({
     width: 110,
     maxWidth: 110,
   },
-
   pressed: {
     transform: [{ scale: 0.95 }],
     opacity: 0.85,
   },
-
   iconWrapper: {
     width: 40,
     height: 40,
@@ -127,17 +123,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 6,
   },
-
   icon: {
     width: 35,
     height: 35,
     resizeMode: "contain",
   },
-
   label: {
     fontSize: 12,
     fontWeight: "600",
     textAlign: "center",
-    marginTop: 20,
+    marginTop: 10, // Adjusted for better spacing
   },
 });

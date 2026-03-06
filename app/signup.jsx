@@ -1,108 +1,43 @@
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
-} from "react-native";
+import React, { useState } from "react";
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { router } from "expo-router";
+import { auth } from "../firebaseConfig";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 
 export default function Signup() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleSignup = async () => {
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      router.replace("/tasks");
+    } catch (error) { Alert.alert("Error", error.message); }
+  };
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Sign Up</Text>
-
-      <View style={styles.cardWrapper}>
-        <View style={styles.card}>
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Username"
-              placeholderTextColor="#999"
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#999"
-              secureTextEntry
-            />
-          </View>
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => router.replace("/tasks")}
-          >
-            <Text style={styles.buttonText}>SIGN UP</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.card}>
+        <TextInput style={styles.input} placeholder="Email" onChangeText={setEmail} autoCapitalize="none" />
+        <TextInput style={styles.input} placeholder="Password" secureTextEntry onChangeText={setPassword} />
+        <TouchableOpacity style={styles.button} onPress={handleSignup}>
+          <Text style={styles.buttonText}>SIGN UP</Text>
+        </TouchableOpacity>
       </View>
-
       <TouchableOpacity onPress={() => router.push("/login")}>
-              <Text style={styles.link}>Don’t have an account? Login</Text>
-    </TouchableOpacity>
-
+        <Text style={styles.link}>Already have an account? Login</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#D4F0F0",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 25,
-  },
-  cardWrapper: {
-    width: "100%",
-    alignItems: "center",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 420,
-    minHeight: 340,
-    backgroundColor: "#CBAACB",
-    borderRadius: 20,
-    padding: 32,
-    justifyContent: "space-between", // ⭐ spreads content vertically
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
-  form: {
-    width: "100%",                 // ⭐ full width
-    marginTop: 10,
-  },
-  input: {
-    width: "100%",                 // ⭐ fills card width
-    height: 54,                    // ⭐ taller input
-    borderRadius: 12,
-    borderWidth: 1,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    fontSize: 16,
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: "#8FCACA",
-    paddingVertical: 18,           // ⭐ taller button
-    borderRadius: 16,
-    alignItems: "center",
-  },
-  buttonText: {
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  link: {
-    marginTop: 24,
-    fontSize: 15,
-  },
+  screen: { flex: 1, backgroundColor: "#D4F0F0", justifyContent: "center", alignItems: "center", padding: 20 },
+  title: { fontSize: 28, fontWeight: "bold", marginBottom: 25 },
+  card: { width: "100%", maxWidth: 400, backgroundColor: "#CBAACB", borderRadius: 20, padding: 30 },
+  input: { backgroundColor: "#FFF", height: 50, borderRadius: 10, paddingHorizontal: 15, marginBottom: 15 },
+  button: { backgroundColor: "#8FCACA", padding: 15, borderRadius: 10, alignItems: "center" },
+  buttonText: { fontWeight: "bold" },
+  link: { marginTop: 20 }
 });

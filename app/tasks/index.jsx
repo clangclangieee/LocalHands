@@ -1,140 +1,252 @@
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, ScrollView, Image, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { db, auth } from "../../firebaseConfig";
+import { collection, onSnapshot, query, orderBy, doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
+import { useRouter } from "expo-router";
 
-export default function Home() {
+export default function Index() {
+  const [choresWithUser, setChoresWithUser] = useState([]);
+  const [locationFilter, setLocationFilter] = useState("");
+  const [budgetFilter, setBudgetFilter] = useState("");
+  const router = useRouter();
+
+  useEffect(() => {
+    const choresQuery = query(collection(db, "chores"), orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(choresQuery, async snap => {
+      const choresData = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(chore => !chore.completed);
+
+      const enriched = await Promise.all(
+        choresData.map(async chore => {
+          const userDoc = await getDoc(doc(db, "users", chore.userId));
+
+          return {
+            ...chore,
+            realPosterName: userDoc.exists() ? userDoc.data().name : "User",
+            posterPic: userDoc.exists() ? userDoc.data().profilePic || null : null
+          };
+        })
+      );
+
+      setChoresWithUser(enriched);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
+    try {
+      if (!auth.currentUser) return Alert.alert("Error", "Login to accept tasks");
+
+      const choreRef = doc(db, "chores", choreId);
+
+      if (currentAcceptedBy === auth.currentUser.uid) {
+        await updateDoc(choreRef, { acceptedBy: null });
+        Alert.alert("Task Unaccepted");
+      } else if (!currentAcceptedBy) {
+        await updateDoc(choreRef, { acceptedBy: auth.currentUser.uid });
+        Alert.alert("Task Accepted!");
+      } else {
+        Alert.alert("Task Already Accepted");
+      }
+    } catch (e) {
+      Alert.alert("Error", e.message);
+    }
+  };
+
+  const openChat = async (userId, userName) => {
+    if (!auth.currentUser) return Alert.alert("Error", "Login first");
+
+    const chatId = [auth.currentUser.uid, userId].sort().join("_");
+
+    const chatRef = doc(db, "chats", chatId);
+    const chatDoc = await getDoc(chatRef);
+
+    if (!chatDoc.exists()) {
+      await setDoc(chatRef, {
+        participants: [auth.currentUser.uid, userId],
+        messages: [],
+        createdAt: new Date()
+      });
+    }
+
+    router.push({
+      pathname: `/chat/${chatId}`,
+      params: { userName }
+    });
+  };
+
+  const filteredChores = choresWithUser.filter(chore => {
+    const matchesLocation = locationFilter
+      ? chore.location?.toLowerCase().includes(locationFilter.toLowerCase())
+      : true;
+
+    const matchesBudget = budgetFilter
+      ? chore.budget <= parseFloat(budgetFilter)
+      : true;
+
+    return matchesLocation && matchesBudget;
+  });
+
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.header}>Your Chores</Text>
+      <Text style={styles.header}>Available Chores</Text>
 
-      <View style={styles.card}>
-        <View style={styles.userRow}>
-          <Image
-            source={{ uri: "https://i.pinimg.com/736x/d0/64/d5/d064d5297876fa933c2bd8d3ff4443df.jpg" }}
-            style={styles.profilePic}
-          />
-          <Text style={styles.user}>
-            Belen <Text style={styles.time}>1 day ago</Text>
-          </Text>
-        </View>
-        <Text style={styles.title}>Tech Help</Text>
-        <Text>Need help with my phone… sige siya restart…</Text>
-        <Text style={styles.pay}>₱200</Text>
-        <Text style={styles.date}>When: 01/18/2026</Text>
+      <View style={styles.filters}>
+        <TextInput
+          style={styles.filterInput}
+          placeholder="Filter by location"
+          value={locationFilter}
+          onChangeText={setLocationFilter}
+        />
 
-        <TouchableOpacity style={styles.applyButton}>
-          <Text style={styles.applyButtonText}>Apply</Text>
-        </TouchableOpacity>
+        <TextInput
+          style={styles.filterInput}
+          placeholder="Filter by budget (₱)"
+          keyboardType="numeric"
+          value={budgetFilter}
+          onChangeText={setBudgetFilter}
+        />
       </View>
 
-      <View style={styles.card}>
-        <View style={styles.userRow}>
-          <Image
-            source={{ uri: "https://i.pinimg.com/736x/83/a8/4a/83a84a3bc2fe16068655bcf49f2e769e.jpg" }}
-            style={styles.profilePic}
-          />
-          <Text style={styles.user}>
-            Charlotte <Text style={styles.time}>a week ago</Text>
-          </Text>
-        </View>
-        <Text style={styles.title}>Laundry</Text>
-        <Text>2 baskets of clothes</Text>
-        <Text style={styles.pay}>₱300</Text>
-        <Text style={styles.date}>When: 01/18/2026</Text>
+      {filteredChores.map(item => {
+        let buttonColor = "#CBAACB";
+        let buttonText = "Accept Task";
+        let disabled = false;
 
-        <TouchableOpacity style={styles.applyButton}>
-          <Text style={styles.applyButtonText}>Apply</Text>
-        </TouchableOpacity>
-      </View>
+        if (item.acceptedBy === auth.currentUser?.uid) {
+          buttonColor = "#F3B0C3";
+          buttonText = "Unaccept Task";
+        } else if (item.acceptedBy) {
+          buttonColor = "#B0B0B0";
+          buttonText = "Accepted by Someone";
+          disabled = true;
+        }
 
-      <View style={styles.card}>
-        <View style={styles.userRow}>
-          <Image
-            source={{ uri: "https://i.pinimg.com/736x/47/01/d6/4701d68b290c99514ca3e7822dbf3592.jpg" }}
-            style={styles.profilePic}
-          />
-          <Text style={styles.user}>
-            HakunaMatata <Text style={styles.time}>1 hour ago</Text>
-          </Text>
-        </View>
-        <Text style={styles.title}>Yard Work</Text>
-        <Text>Cleaned my lawn, went over yard</Text>
-        <Text style={styles.pay}>₱400</Text>
-        <Text style={styles.date}>When: 01/18/2026</Text>
+        return (
+          <View key={item.id} style={styles.card}>
+            <TouchableOpacity
+              style={styles.posterHeader}
+              onPress={() => openChat(item.userId, item.realPosterName)}
+            >
+              {item.posterPic ? (
+                <Image source={{ uri: item.posterPic }} style={styles.posterPic} />
+              ) : (
+                <View style={styles.picFallback}>
+                  <Text>👤</Text>
+                </View>
+              )}
 
-        <TouchableOpacity style={styles.applyButton}>
-          <Text style={styles.applyButtonText}>Apply</Text>
-        </TouchableOpacity>
-      </View>
+              <Text style={styles.realName}>{item.realPosterName}</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.title}>{item.category}</Text>
+            <Text>{item.description}</Text>
+
+            <Text style={styles.pay}>💰 ₱{item.budget}</Text>
+
+            {item.location && (
+              <Text style={styles.location}>📍 {item.location}</Text>
+            )}
+
+            <TouchableOpacity
+              style={[styles.acceptBtn, { backgroundColor: buttonColor }]}
+              onPress={() => toggleAcceptTask(item.id, item.acceptedBy)}
+              disabled={disabled}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                {buttonText}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: "#E6F7F7",
-    padding: 15,
+  container: { flex: 1, backgroundColor: "#E6F7F7", padding: 15 },
+  header: { fontSize: 26, fontWeight: "bold", marginVertical: 20, textAlign: "center" },
+
+  filters: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 15
   },
-  header: {
-    fontSize: 26,
-    fontWeight: "bold",
-    marginBottom: 30,
-    marginTop: 20,
-    textAlign: "center",
+
+  filterInput: {
+    flex: 1,
+    backgroundColor: "#FFF",
+    padding: 8,
+    borderRadius: 8,
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: "#DDD"
   },
+
   card: {
     backgroundColor: "#FFF",
     padding: 15,
     borderRadius: 12,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
+    elevation: 3
   },
-  userRow: {
+
+  posterHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 5,
+    marginBottom: 10
   },
-  profilePic: {
+
+  posterPic: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginRight: 10,
+    marginRight: 10
   },
-  user: {
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  time: {
-    fontWeight: "normal",
-    color: "#888",
-    fontSize: 12,
-  },
-  title: {
-    fontWeight: "bold",
-    marginTop: 5,
-    fontSize: 18,
-  },
-  pay: {
-    marginTop: 5,
-    fontWeight: "bold",
-  },
-  date: {
-    marginTop: 3,
-    color: "#555",
-    fontSize: 12,
-  },
-  applyButton: {
-    marginTop: 10,
-    backgroundColor: "#8FCACA",
-    paddingVertical: 8,
-    borderRadius: 8,
+
+  picFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#EEE",
+    justifyContent: "center",
     alignItems: "center",
+    marginRight: 10
   },
-  applyButtonText: {
-    color: "#FFF",
+
+  realName: {
     fontWeight: "bold",
-    fontSize: 16,
+    color: "#888",
+    fontSize: 13
   },
+
+  title: {
+    fontSize: 19,
+    fontWeight: "bold",
+    color: "#333"
+  },
+
+  pay: {
+    fontWeight: "bold",
+    color: "green",
+    marginTop: 5,
+    fontSize: 16
+  },
+
+  location: {
+    color: "#555",
+    marginTop: 5,
+    fontStyle: "italic"
+  },
+
+  acceptBtn: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center"
+  }
 });
