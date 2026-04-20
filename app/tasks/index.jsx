@@ -1,7 +1,24 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, ScrollView, Image, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  Image,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert
+} from "react-native";
 import { db, auth } from "../../firebaseConfig";
-import { collection, onSnapshot, query, orderBy, doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+  doc,
+  getDoc,
+  updateDoc
+} from "firebase/firestore";
 import { useRouter } from "expo-router";
 
 export default function Index() {
@@ -11,21 +28,28 @@ export default function Index() {
   const router = useRouter();
 
   useEffect(() => {
-    const choresQuery = query(collection(db, "chores"), orderBy("createdAt", "desc"));
+    const choresQuery = query(
+      collection(db, "chores"),
+      orderBy("createdAt", "desc")
+    );
 
-    const unsubscribe = onSnapshot(choresQuery, async snap => {
+    const unsubscribe = onSnapshot(choresQuery, async (snap) => {
       const choresData = snap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(chore => !chore.completed);
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((chore) => !chore.completed);
 
       const enriched = await Promise.all(
-        choresData.map(async chore => {
+        choresData.map(async (chore) => {
           const userDoc = await getDoc(doc(db, "users", chore.userId));
 
           return {
             ...chore,
-            realPosterName: userDoc.exists() ? userDoc.data().name : "User",
-            posterPic: userDoc.exists() ? userDoc.data().profilePic || null : null
+            realPosterName: userDoc.exists()
+              ? userDoc.data().name
+              : "User",
+            posterPic: userDoc.exists()
+              ? userDoc.data().profilePic || null
+              : null
           };
         })
       );
@@ -36,9 +60,15 @@ export default function Index() {
     return unsubscribe;
   }, []);
 
+  // ✅ FIXED NAVIGATION
+  const openProfile = (userId) => {
+    router.push(`/profile/${userId}`);
+  };
+
   const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
     try {
-      if (!auth.currentUser) return Alert.alert("Error", "Login to accept tasks");
+      if (!auth.currentUser)
+        return Alert.alert("Error", "Login to accept tasks");
 
       const choreRef = doc(db, "chores", choreId);
 
@@ -46,7 +76,9 @@ export default function Index() {
         await updateDoc(choreRef, { acceptedBy: null });
         Alert.alert("Task Unaccepted");
       } else if (!currentAcceptedBy) {
-        await updateDoc(choreRef, { acceptedBy: auth.currentUser.uid });
+        await updateDoc(choreRef, {
+          acceptedBy: auth.currentUser.uid
+        });
         Alert.alert("Task Accepted!");
       } else {
         Alert.alert("Task Already Accepted");
@@ -56,31 +88,11 @@ export default function Index() {
     }
   };
 
-  const openChat = async (userId, userName) => {
-    if (!auth.currentUser) return Alert.alert("Error", "Login first");
-
-    const chatId = [auth.currentUser.uid, userId].sort().join("_");
-
-    const chatRef = doc(db, "chats", chatId);
-    const chatDoc = await getDoc(chatRef);
-
-    if (!chatDoc.exists()) {
-      await setDoc(chatRef, {
-        participants: [auth.currentUser.uid, userId],
-        messages: [],
-        createdAt: new Date()
-      });
-    }
-
-    router.push({
-      pathname: `/chat/${chatId}`,
-      params: { userName }
-    });
-  };
-
-  const filteredChores = choresWithUser.filter(chore => {
+  const filteredChores = choresWithUser.filter((chore) => {
     const matchesLocation = locationFilter
-      ? chore.location?.toLowerCase().includes(locationFilter.toLowerCase())
+      ? chore.location
+          ?.toLowerCase()
+          .includes(locationFilter.toLowerCase())
       : true;
 
     const matchesBudget = budgetFilter
@@ -111,7 +123,7 @@ export default function Index() {
         />
       </View>
 
-      {filteredChores.map(item => {
+      {filteredChores.map((item) => {
         let buttonColor = "#CBAACB";
         let buttonText = "Accept Task";
         let disabled = false;
@@ -127,39 +139,61 @@ export default function Index() {
 
         return (
           <View key={item.id} style={styles.card}>
-            <TouchableOpacity
-              style={styles.posterHeader}
-              onPress={() => openChat(item.userId, item.realPosterName)}
-            >
-              {item.posterPic ? (
-                <Image source={{ uri: item.posterPic }} style={styles.posterPic} />
-              ) : (
-                <View style={styles.picFallback}>
-                  <Text>👤</Text>
-                </View>
-              )}
+            
+            {/* ✅ PROFILE CLICKABLE AREA */}
+            <View style={styles.posterHeader}>
+              
+              {/* PROFILE PIC */}
+              <TouchableOpacity onPress={() => openProfile(item.userId)}>
+                {item.posterPic ? (
+                  <Image
+                    source={{ uri: item.posterPic }}
+                    style={styles.posterPic}
+                  />
+                ) : (
+                  <View style={styles.picFallback}>
+                    <Text>👤</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
 
-              <Text style={styles.realName}>{item.realPosterName}</Text>
-            </TouchableOpacity>
+              {/* USERNAME */}
+              <TouchableOpacity onPress={() => openProfile(item.userId)}>
+                <Text style={styles.realName}>
+                  {item.realPosterName}
+                </Text>
+              </TouchableOpacity>
 
+            </View>
+
+            {/* TASK INFO */}
             <Text style={styles.title}>{item.category}</Text>
             <Text>{item.description}</Text>
 
             <Text style={styles.pay}>💰 ₱{item.budget}</Text>
 
             {item.location && (
-              <Text style={styles.location}>📍 {item.location}</Text>
+              <Text style={styles.location}>
+                📍 {item.location}
+              </Text>
             )}
 
+            {/* ACCEPT BUTTON */}
             <TouchableOpacity
-              style={[styles.acceptBtn, { backgroundColor: buttonColor }]}
-              onPress={() => toggleAcceptTask(item.id, item.acceptedBy)}
+              style={[
+                styles.acceptBtn,
+                { backgroundColor: buttonColor }
+              ]}
+              onPress={() =>
+                toggleAcceptTask(item.id, item.acceptedBy)
+              }
               disabled={disabled}
             >
               <Text style={{ color: "#fff", fontWeight: "bold" }}>
                 {buttonText}
               </Text>
             </TouchableOpacity>
+
           </View>
         );
       })}
@@ -168,8 +202,18 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#E6F7F7", padding: 15 },
-  header: { fontSize: 26, fontWeight: "bold", marginVertical: 20, textAlign: "center" },
+  container: {
+    flex: 1,
+    backgroundColor: "#E6F7F7",
+    padding: 15
+  },
+
+  header: {
+    fontSize: 26,
+    fontWeight: "bold",
+    marginVertical: 20,
+    textAlign: "center"
+  },
 
   filters: {
     flexDirection: "row",
@@ -218,10 +262,11 @@ const styles = StyleSheet.create({
     marginRight: 10
   },
 
+  // 🔥 LOOKS CLICKABLE NOW
   realName: {
     fontWeight: "bold",
-    color: "#888",
-    fontSize: 13
+    color: "#8FCACA",
+    fontSize: 14
   },
 
   title: {

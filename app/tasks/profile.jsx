@@ -45,11 +45,17 @@ export default function Profile() {
   const [editDesc, setEditDesc] = useState("");
   const [editBudget, setEditBudget] = useState("");
 
+  // Ratings & Reviews
+  const [reviews, setReviews] = useState([]);
+  const [averageRating, setAverageRating] = useState(0);
+  const [numReviews, setNumReviews] = useState(0);
+
   const router = useRouter();
 
   useEffect(() => {
     let unsubscribeChores;
     let unsubscribeAccepted;
+    let unsubscribeReviews;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -83,6 +89,20 @@ export default function Profile() {
           setLoading(false);
         });
 
+        // Fetch Reviews
+        const qReviews = query(collection(db, "reviews"), where("userId", "==", user.uid));
+        unsubscribeReviews = onSnapshot(qReviews, (snap) => {
+          const revs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setReviews(revs);
+          setNumReviews(revs.length);
+          if (revs.length > 0) {
+            const avg = revs.reduce((sum, r) => sum + (r.rating || 0), 0) / revs.length;
+            setAverageRating(avg);
+          } else {
+            setAverageRating(0);
+          }
+        });
+
       } else {
         router.replace("/login");
       }
@@ -92,6 +112,7 @@ export default function Profile() {
       unsubscribeAuth();
       if (unsubscribeChores) unsubscribeChores();
       if (unsubscribeAccepted) unsubscribeAccepted();
+      if (unsubscribeReviews) unsubscribeReviews();
     };
   }, []);
 
@@ -254,6 +275,26 @@ export default function Profile() {
           </View>
         )}
 
+        {/* Ratings & Reviews */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Ratings & Reviews</Text>
+          {numReviews === 0 ? (
+            <Text style={styles.emptyText}>No reviews yet.</Text>
+          ) : (
+            <>
+              <Text style={{ textAlign: "center", marginBottom: 10 }}>
+                ⭐ {averageRating.toFixed(1)} / 5 ({numReviews} reviews)
+              </Text>
+              {reviews.map((rev) => (
+                <View key={rev.id} style={styles.reviewCard}>
+                  <Text style={{ fontWeight: "bold" }}>{rev.rating} ⭐</Text>
+                  <Text>{rev.comment}</Text>
+                </View>
+              ))}
+            </>
+          )}
+        </View>
+
         {/* My Posted Chores */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>My Posted Tasks</Text>
@@ -404,7 +445,5 @@ const styles = StyleSheet.create({
   btnLogout: { marginTop: 40, padding: 15, width: "100%", alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: "#FF4444", marginBottom: 40 },
   logoutText: { color: "#FF4444", fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  modalContent: { backgroundColor: "#FFF", width: "85%", padding: 20, borderRadius: 20, alignItems: "center" },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 15 },
-  modalBtn: { padding: 12, borderRadius: 10, width: "48%", alignItems: "center" }
+  modalContent: { backgroundColor: "#FFF", width: "85%", padding: 20}
 });
