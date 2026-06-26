@@ -422,28 +422,180 @@ export default function Profile() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#D4F0F0" },
-  container: { flex: 1, alignItems: "center", padding: 20, paddingTop: 40 },
-  avatar: { width: 120, height: 120, borderRadius: 60, backgroundColor: "#FFF", justifyContent: "center", alignItems: "center", marginBottom: 20, elevation: 5, overflow: "hidden" },
-  avatarImage: { width: "100%", height: "100%" },
-  editOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.6)", height: 25, justifyContent: "center", alignItems: "center" },
-  input: { backgroundColor: "#FFF", width: "100%", padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: "#CBAACB" },
-  profileCard: { backgroundColor: "#FFF", width: "100%", padding: 20, borderRadius: 20, alignItems: "center", marginBottom: 20, elevation: 5 },
-  editContainer: { width: "100%", alignItems: "center", marginBottom: 20 },
-  bioText: { fontSize: 14, color: "#666", marginBottom: 10, textAlign: "center" },
-  nameText: { fontSize: 24, fontWeight: "bold" },
-  numText: { fontSize: 14, color: "#666", marginBottom: 5 },
-  btnSave: { backgroundColor: "#8FCACA", padding: 15, borderRadius: 25, width: 200, alignItems: "center" },
-  btnEdit: { backgroundColor: "#CBAACB", padding: 12, borderRadius: 25, width: 150, alignItems: "center" },
-  btnText: { color: "#FFF", fontWeight: "bold" },
-  section: { width: "100%", marginTop: 30 },
-  sectionTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  miniCard: { backgroundColor: "#FFF", padding: 15, borderRadius: 15, marginBottom: 10, flexDirection: "row", alignItems: "center", elevation: 3 },
-  actionButtons: { justifyContent: "center", alignItems: "center" },
-  smallBtn: { padding: 8, borderRadius: 8, alignItems: "center", width: 80 },
-  emptyText: { textAlign: "center", color: "#777", marginTop: 10 },
-  btnLogout: { marginTop: 40, padding: 15, width: "100%", alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: "#FF4444", marginBottom: 40 },
-  logoutText: { color: "#FF4444", fontWeight: "bold" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  modalContent: { backgroundColor: "#FFF", width: "85%", padding: 20}
+  center: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center", 
+    backgroundColor: "#D4F0F0" 
+  },
+
+  container: { 
+    flex: 1, 
+    alignItems: "center", 
+    padding: 20, 
+    paddingTop: 40 
+  },
+
+  avatar: { 
+    width: 120, 
+    height: 120, 
+    borderRadius: 60, 
+    backgroundColor: "#FFF", 
+    justifyContent: "center", 
+    alignItems: "center", 
+    marginBottom: 20, 
+    elevation: 5, 
+    overflow: "hidden" 
+  },
+
+  avatarImage: { 
+    width: "100%", 
+    height: "100%" 
+  },
+
+  editOverlay: { 
+    position: "absolute", 
+    bottom: 0, 
+    left: 0, 
+    right: 0, 
+    backgroundColor: "rgba(0,0,0,0.6)", 
+    height: 25, 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
+
+  input: { 
+    backgroundColor: "#FFF", 
+    width: "100%", 
+    padding: 15, 
+    borderRadius: 12, 
+    marginBottom: 10, 
+    borderWidth: 1, 
+    borderColor: "#CBAACB" 
+  },
+
+  profileCard: { 
+    backgroundColor: "#FFF", 
+    width: "100%", 
+    padding: 20, 
+    borderRadius: 20, 
+    alignItems: "center", 
+    marginBottom: 20, 
+    elevation: 5 
+  },
+
+  editContainer: { 
+    width: "100%", 
+    alignItems: "center", 
+    marginBottom: 20 
+  },
+
+  bioText: { 
+    fontSize: 14, 
+    color: "#666", 
+    marginBottom: 10, 
+    textAlign: "center" 
+  },
+
+  nameText: { 
+    fontSize: 24, 
+    fontWeight: "bold" 
+  },
+
+  numText: { 
+    fontSize: 14, 
+    color: "#666", 
+    marginBottom: 5 
+  },
+
+  btnSave: { 
+    backgroundColor: "#8FCACA", 
+    padding: 15, 
+    borderRadius: 25, 
+    width: 200, 
+    alignItems: "center" 
+  },
+
+  btnEdit: { 
+    backgroundColor: "#CBAACB", 
+    padding: 12, 
+    borderRadius: 25, 
+    width: 150, 
+    alignItems: "center" 
+  },
+
+  btnText: { 
+    color: "#FFF", 
+    fontWeight: "bold" 
+  },
+
+  section: { 
+    width: "100%", 
+    marginTop: 30 
+  },
+
+  sectionTitle: { 
+    fontSize: 20, 
+    fontWeight: "bold", 
+    marginBottom: 15, 
+    textAlign: "center" 
+  },
+
+  miniCard: { 
+    backgroundColor: "#FFF", 
+    padding: 15, 
+    borderRadius: 15, 
+    marginBottom: 10, 
+    flexDirection: "row", 
+    alignItems: "center", 
+    elevation: 3 
+  },
+
+  actionButtons: { 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
+
+  smallBtn: { 
+    padding: 8, 
+    borderRadius: 8, 
+    alignItems: "center", 
+    width: 80 
+  },
+
+  emptyText: { 
+    textAlign: "center", 
+    color: "#777", 
+    marginTop: 10 
+  },
+
+  btnLogout: { 
+    marginTop: 40, 
+    padding: 15, 
+    width: "100%", 
+    alignItems: "center", 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: "#FF4444", 
+    marginBottom: 40 
+  },
+
+  logoutText: { 
+    color: "#FF4444", 
+    fontWeight: "bold" 
+  },
+
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: "rgba(0,0,0,0.5)", 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
+
+  modalContent: { 
+    backgroundColor: "#FFF", 
+    width: "85%", 
+    padding: 20
+  }
+  
 });
