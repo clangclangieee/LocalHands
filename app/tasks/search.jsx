@@ -11,9 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-
-import { db } from "../../firebaseConfig";
-import { collection, onSnapshot } from "firebase/firestore";
+import { supabase } from "../../supabaseConfig";
 
 const categories = [
   { id: "cleaning", name: "Cleaning", icon: require("../../assets/icons/cleaning.png") },
@@ -34,19 +32,19 @@ export default function Search() {
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
-      const list = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+    const fetchUsers = async () => {
+      try {
+        // Look up the "profiles" table instead of "users"
+        const { data, error } = await supabase.from("profiles").select("*");
+        if (data) setUsers(data);
+      } catch (err) {
+        console.error("Error fetching user data:", err);
+      }
+    };
 
-      setUsers(list);
-    });
-
-    return unsubscribe;
+    fetchUsers();
   }, []);
 
-  // ✅ Navigate to profile
   const openProfile = (userId) => {
     router.push(`/profile/${userId}`);
   };
@@ -61,7 +59,6 @@ export default function Search() {
 
   return (
     <View style={styles.container}>
-      {/* Search Bar */}
       <View style={styles.searchWrapper}>
         <TextInput
           style={styles.input}
@@ -82,38 +79,24 @@ export default function Search() {
             {query.length > 0 && filteredUsers.length > 0 && (
               <View style={{ marginTop: 20 }}>
                 <Text style={styles.sectionTitle}>Users</Text>
-
                 {filteredUsers.map((item) => (
                   <View key={item.id} style={styles.userCard}>
-
-                    {/* ✅ SAME STYLE AS YOUR OTHER PAGE */}
                     <View style={styles.posterHeader}>
-
-                      {/* CLICKABLE PROFILE PIC */}
-                      <TouchableOpacity
-                        onPress={() => openProfile(item.id)}
-                      >
-                        {item.profilePic ? (
-                          <Image
-                            source={{ uri: item.profilePic }}
-                            style={styles.posterPic}
-                          />
+                      <TouchableOpacity onPress={() => openProfile(item.id)}>
+                        {/* Adjusted property mapping from profilePic to profile_pic */}
+                        {item.profile_pic ? (
+                          <Image source={{ uri: item.profile_pic }} style={styles.posterPic} />
                         ) : (
                           <View style={styles.picFallback}>
                             <Text>👤</Text>
                           </View>
                         )}
                       </TouchableOpacity>
-
-                      {/* CLICKABLE NAME */}
-                      <TouchableOpacity
-                        onPress={() => openProfile(item.id)}
-                      >
+                      <TouchableOpacity onPress={() => openProfile(item.id)}>
                         <Text style={styles.userName}>
                           {item.name || "No Name"}
                         </Text>
                       </TouchableOpacity>
-
                     </View>
                   </View>
                 ))}
@@ -137,7 +120,6 @@ export default function Search() {
             <View style={styles.iconWrapper}>
               <Image source={item.icon} style={styles.icon} />
             </View>
-
             <Text style={styles.label} numberOfLines={2}>
               {item.name}
             </Text>
@@ -149,109 +131,19 @@ export default function Search() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#D4F0F0",
-    padding: 20,
-  },
-
-  searchWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF",
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 20,
-    marginTop: 40,
-  },
-
-  input: {
-    flex: 1,
-    fontSize: 16,
-    marginRight: 8,
-  },
-
-  row: {
-    justifyContent: "center",
-  },
-
-  card: {
-    backgroundColor: "#F7AFC4",
-    margin: 6,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    height: 110,
-    width: 110,
-    maxWidth: 110,
-  },
-
-  pressed: {
-    transform: [{ scale: 0.95 }],
-    opacity: 0.85,
-  },
-
-  iconWrapper: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-  },
-
-  icon: {
-    width: 35,
-    height: 35,
-    resizeMode: "contain",
-  },
-
-  label: {
-    fontSize: 12,
-    fontWeight: "600",
-    textAlign: "center",
-    marginTop: 10,
-  },
-
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 10,
-    marginLeft: 8,
-  },
-
-  userCard: {
-    backgroundColor: "#FFF",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-
-  /* SAME PROFILE STYLE */
-  posterHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  posterPic: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 10,
-  },
-
-  picFallback: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#EEE",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-  },
-
-  userName: {
-    fontWeight: "bold",
-    color: "#8FCACA",
-    fontSize: 14,
-  },
+  container: { flex: 1, backgroundColor: "#FFFF", padding: 20 },
+  searchWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#DF8F9C", borderRadius: 14, padding: 12, marginBottom: 20, marginTop: 40 },
+  input: { flex: 1, fontSize: 16, marginRight: 8 },
+  row: { justifyContent: "center" },
+  card: { backgroundColor: "#DF8F9C", margin: 6, borderRadius: 14, alignItems: "center", justifyContent: "center", height: 110, width: 110 },
+  pressed: { transform: [{ scale: 0.95 }], opacity: 0.85 },
+  iconWrapper: { width: 40, height: 40, alignItems: "center", justifyContent: "center", marginBottom: 6 },
+  icon: { width: 35, height: 35, resizeMode: "contain" },
+  label: { fontSize: 12, fontWeight: "600", textAlign: "center", marginTop: 10 },
+  sectionTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10, marginLeft: 8 },
+  userCard: { backgroundColor: "#DF8F9C", padding: 12, borderRadius: 12, marginBottom: 10 },
+  posterHeader: { flexDirection: "row", alignItems: "center" },
+  posterPic: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
+  picFallback: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#EEE", justifyContent: "center", alignItems: "center", marginRight: 10 },
+  userName: { fontWeight: "bold", color: "#660005", fontSize: 14 }
 });

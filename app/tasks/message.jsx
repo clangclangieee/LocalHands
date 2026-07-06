@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   SafeAreaView,
   ScrollView,
@@ -9,188 +9,147 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-
-import { db, auth } from "../../firebaseConfig";
-import {
-  collection,
-  onSnapshot,
-  query,
-  orderBy,
-  doc,
-  getDoc,
-  deleteDoc,
-  where,
-  getDocs,
-  limit,
-} from "firebase/firestore";
-
+import { supabase } from "../../supabaseConfig";
 import { useRouter } from "expo-router";
 
 export default function MessagePreview() {
   const router = useRouter();
   const [chats, setChats] = useState([]);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  
+  // Use a ref to store the channel safely
+  const channelRef = useRef(null);
+
+  const fetchChats = async (userId) => {
+    try {
+      const { data: messagesData, error: messagesError } = await supabase
+        .from("messages")
+        .select(`chat_id, text, created_at, sender_id`)
+        .or(`chat_id.ilike.%${userId}%`)
+        .order("created_at", { ascending: false });
+
+      if (messagesError) throw messagesError;
+
+      const chatMap = {};
+      const partnerIdsToFetch = new Set();
+
+      messagesData.forEach((msg) => {
+        if (msg.chat_id.includes(userId)) {
+          if (!chatMap[msg.chat_id]) {
+            const ids = msg.chat_id.split("_");
+            const partnerId = ids[0] === userId ? ids[1] : ids[0];
+            if (partnerId) partnerIdsToFetch.add(partnerId);
+
+            chatMap[msg.chat_id] = {
+              chatId: msg.chat_id,
+              partnerId: partnerId,
+              userName: "User",
+              profilePic: null,
+              lastMessage: msg.text || "",
+              timestamp: new Date(msg.created_at),
+            };
+          }
+        }
+      });
+
+      if (partnerIdsToFetch.size > 0) {
+        const { data: profilesData } = await supabase
+          .from("profiles")
+          .select("id, name, profile_pic")
+          .in("id", Array.from(partnerIdsToFetch));
+
+        if (profilesData) {
+          profilesData.forEach((p) => {
+            Object.keys(chatMap).forEach((key) => {
+              if (chatMap[key].partnerId === p.id) {
+                chatMap[key].userName = p.name;
+                chatMap[key].profilePic = p.profile_pic;
+              }
+            });
+          });
+        }
+      }
+      setChats(Object.values(chatMap));
+    } catch (err) {
+      console.error("Error fetching chats:", err.message);
+    }
+  };
 
   useEffect(() => {
-    if (!auth.currentUser) return;
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setCurrentUserId(user.id);
+      
+      // Initial fetch
+      await fetchChats(user.id);
 
-    const q = query(
-      collection(db, "chats"),
-      where("users", "array-contains", auth.currentUser.uid),
-      orderBy("createdAt", "desc")
-    );
+      // Setup Realtime Channel using the ref
+      if (!channelRef.current) {
+        channelRef.current = supabase
+          .channel("inbox-live-sync")
+          .on(
+            "postgres_changes",
+            { event: "INSERT", schema: "public", table: "messages" },
+            () => fetchChats(user.id)
+          )
+          .subscribe();
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, async (snap) => {
-      const allChats = snap.docs.map((docItem) => ({
-        id: docItem.id,
-        ...docItem.data(),
-      }));
+    init();
 
-      const previews = await Promise.all(
-        allChats.map(async (chat) => {
-          if (!Array.isArray(chat.users)) return null;
-
-          const otherId = chat.users.find(
-            (uid) => uid !== auth.currentUser.uid
-          );
-          if (!otherId) return null;
-
-          const userDoc = await getDoc(doc(db, "users", otherId));
-
-          const messagesRef = collection(
-            db,
-            "chats",
-            chat.id,
-            "messages"
-          );
-
-          const lastMsgQuery = query(
-            messagesRef,
-            orderBy("createdAt", "desc"),
-            limit(1)
-          );
-
-          const msgSnap = await getDocs(lastMsgQuery);
-
-          let lastMessage = "No messages yet";
-          let timestamp =
-            chat.createdAt?.toDate?.() || new Date();
-
-          if (!msgSnap.empty) {
-            const msgData = msgSnap.docs[0].data();
-            lastMessage = msgData.text || "No message";
-            timestamp =
-              msgData.createdAt?.toDate?.() || timestamp;
-          }
-
-          return {
-            chatId: chat.id,
-            userName: userDoc.exists()
-              ? userDoc.data().name
-              : "User",
-            profilePic: userDoc.exists()
-              ? userDoc.data().profilePic || null
-              : null,
-            lastMessage,
-            timestamp,
-          };
-        })
-      );
-
-      const uniqueChats = previews
-        .filter(Boolean)
-        .filter(
-          (chat, index, self) =>
-            index === self.findIndex((c) => c.chatId === chat.chatId)
-        );
-
-      setChats(uniqueChats);
-    });
-
-    return unsubscribe;
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
   }, []);
 
-  const openChat = (chatId) => {
-    router.push(`/chat/${chatId}`);
-  };
+  const openChat = (chatId) => router.push(`/chat/${chatId}`);
 
   const deleteChat = (chatId) => {
-    Alert.alert(
-      "Delete Chat",
-      "Are you sure you want to delete this chat?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, "chats", chatId));
-            } catch (e) {
-              Alert.alert("Error", e.message);
-            }
-          },
+    Alert.alert("Delete Chat", "Are you sure?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.from("messages").delete().eq("chat_id", chatId);
+          if (!error) setChats((prev) => prev.filter((c) => c.chatId !== chatId));
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const formatTime = (date) =>
-    `${date.getHours()}:${date
-      .getMinutes()
-      .toString()
-      .padStart(2, "0")}`;
+  const formatTime = (date) => {
+    if (!(date instanceof Date) || isNaN(date)) return "00:00";
+    return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.header}>Chats</Text>
-
       <ScrollView contentContainerStyle={{ padding: 10 }}>
         {chats.map((chat) => (
           <View key={chat.chatId} style={styles.chatCard}>
-
-            {/* LEFT SIDE - OPEN CHAT */}
-            <TouchableOpacity
-              style={styles.chatLeft}
-              onPress={() => openChat(chat.chatId)}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={styles.chatLeft} onPress={() => openChat(chat.chatId)}>
               <Image
-                source={
-                  chat.profilePic
-                    ? { uri: chat.profilePic }
-                    : require("../../assets/default-avatar.png")
-                }
+                source={chat.profilePic ? { uri: chat.profilePic } : require("../../assets/default-avatar.png")}
                 style={styles.profilePic}
               />
-
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <View style={styles.chatHeader}>
-                  <Text style={styles.userName}>
-                    {chat.userName}
-                  </Text>
-                  <Text style={styles.timestamp}>
-                    {formatTime(chat.timestamp)}
-                  </Text>
+                  <Text style={styles.userName}>{chat.userName}</Text>
+                  <Text style={styles.timestamp}>{formatTime(chat.timestamp)}</Text>
                 </View>
-
-                <Text
-                  style={styles.lastMessage}
-                  numberOfLines={1}
-                >
-                  {chat.lastMessage}
-                </Text>
+                <Text style={styles.lastMessage} numberOfLines={1}>{chat.lastMessage}</Text>
               </View>
             </TouchableOpacity>
-
-            {/* RIGHT SIDE - DELETE */}
-            <TouchableOpacity
-              style={styles.deleteBtn}
-              onPress={() => deleteChat(chat.chatId)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.deleteText}>Delete</Text>
+            <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteChat(chat.chatId)}>
+              <Text style={styles.deleteText}>Clear</Text>
             </TouchableOpacity>
-
           </View>
         ))}
       </ScrollView>
@@ -199,69 +158,15 @@ export default function MessagePreview() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#E6F7F7",
-  },
-
-  header: {
-    fontSize: 26,
-    fontWeight: "bold",
-    marginVertical: 20,
-    textAlign: "center",
-  },
-
-  chatCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 15,
-    backgroundColor: "#CBAACB",
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-
-  chatLeft: {
-    flexDirection: "row",
-    flex: 1,
-    alignItems: "center",
-  },
-
-  profilePic: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-
-  chatHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-
-  userName: {
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-
-  timestamp: {
-    fontSize: 12,
-    color: "#555",
-  },
-
-  lastMessage: {
-    fontSize: 14,
-    color: "#333",
-  },
-
-  deleteBtn: {
-    marginLeft: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 10,
-  },
-
-  deleteText: {
-    color: "#FF3333",
-    fontWeight: "bold",
-  },
+  container: { flex: 1, backgroundColor: "#FFFF" },
+  header: { fontSize: 26, fontWeight: "bold", marginTop: 40, marginBottom: 20, textAlign: "center" },
+  chatCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 15, backgroundColor: "#DF8F9C", borderRadius: 10, marginBottom: 10 },
+  chatLeft: { flexDirection: "row", flex: 1, alignItems: "center" },
+  profilePic: { width: 50, height: 50, borderRadius: 25 },
+  chatHeader: { flexDirection: "row", justifyContent: "space-between" },
+  userName: { fontWeight: "bold", fontSize: 16 },
+  timestamp: { fontSize: 12, color: "#555" },
+  lastMessage: { fontSize: 14, color: "#333" },
+  deleteBtn: { marginLeft: 10, justifyContent: "center", alignItems: "center", paddingHorizontal: 10 },
+  deleteText: { color: "#FF3333", fontWeight: "bold" },
 });

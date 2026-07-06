@@ -10,135 +10,101 @@ import {
   Alert,
   Image,
   ActivityIndicator,
-  Modal
+  Modal,
+  Platform
 } from "react-native";
 
 import * as ImagePicker from "expo-image-picker";
-import { db, auth, storage } from "../../firebaseConfig";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  collection,
-  query,
-  where,
-  onSnapshot,
-  deleteDoc
-} from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { signOut, onAuthStateChanged } from "firebase/auth";
+import { supabase } from "../../supabaseConfig"; 
 import { useRouter } from "expo-router";
 
-export default function Profile() {
+export default function TasksProfile() {
+  const [userId, setUserId] = useState(null);
   const [name, setName] = useState("");
-  const [num, setNum] = useState("");
+  const [num, setNum] = useState(""); 
   const [bio, setBio] = useState("");
   const [avatarUri, setAvatarUri] = useState(null);
   const [edit, setEdit] = useState(false);
 
   const [myChores, setMyChores] = useState([]);
-  const [acceptedChores, setAcceptedChores] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [editingChore, setEditingChore] = useState(null);
   const [editDesc, setEditDesc] = useState("");
   const [editBudget, setEditBudget] = useState("");
 
-  // Ratings & Reviews
-  const [reviews, setReviews] = useState([]);
-  const [averageRating, setAverageRating] = useState(0);
-  const [numReviews, setNumReviews] = useState(0);
-
   const router = useRouter();
 
   useEffect(() => {
-    let unsubscribeChores;
-    let unsubscribeAccepted;
-    let unsubscribeReviews;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        await loadProfile(user.uid);
-
-        // My Posted Chores
-        const q = query(collection(db, "chores"), where("userId", "==", user.uid));
-        unsubscribeChores = onSnapshot(q, (snap) => {
-          const chores = snap.docs.map((d) => ({
-            id: d.id,
-            ...d.data()
-          }));
-          setMyChores(chores);
-        });
-
-        // Accepted Chores
-        const qAccepted = query(collection(db, "chores"), where("acceptedBy", "==", user.uid));
-        unsubscribeAccepted = onSnapshot(qAccepted, async (snap) => {
-          const accepted = await Promise.all(
-            snap.docs.map(async (choreDoc) => {
-              const chore = { id: choreDoc.id, ...choreDoc.data() };
-              const posterDoc = await getDoc(doc(db, "users", chore.userId));
-              if (posterDoc.exists()) {
-                chore.posterName = posterDoc.data().name || "User";
-                chore.posterPic = posterDoc.data().profilePic || null;
-              }
-              return chore;
-            })
-          );
-          setAcceptedChores(accepted);
+    let isMounted = true;
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
+        if (session?.user) {
+          setUserId(session.user.id);
+          await loadProfile(session.user.id);
+          await fetchMyChores(session.user.id);
+        } else {
           setLoading(false);
-        });
-
-        // Fetch Reviews
-        const qReviews = query(collection(db, "reviews"), where("userId", "==", user.uid));
-        unsubscribeReviews = onSnapshot(qReviews, (snap) => {
-          const revs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setReviews(revs);
-          setNumReviews(revs.length);
-          if (revs.length > 0) {
-            const avg = revs.reduce((sum, r) => sum + (r.rating || 0), 0) / revs.length;
-            setAverageRating(avg);
-          } else {
-            setAverageRating(0);
-          }
-        });
-
-      } else {
-        router.replace("/login");
+          router.replace("/login");
+        }
+      } catch (err) {
+        console.error("Auth init error:", err);
+        if (isMounted) setLoading(false);
       }
-    });
-
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeChores) unsubscribeChores();
-      if (unsubscribeAccepted) unsubscribeAccepted();
-      if (unsubscribeReviews) unsubscribeReviews();
     };
+    initializeAuth();
+    return () => { isMounted = false; };
   }, []);
 
   const loadProfile = async (uid) => {
     try {
-      const d = await getDoc(doc(db, "users", uid));
-      if (d.exists()) {
-        const data = d.data();
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
+      if (error) throw error;
+      if (data) {
         setName(data.name || "");
-        setNum(data.number || "");
+        setNum(data.phone || ""); 
         setBio(data.bio || "");
-        setAvatarUri(data.profilePic || null);
+        setAvatarUri(data.profile_pic || null);
       }
     } catch (e) {
-      console.log("Profile Load Error:", e);
+      console.error("Profile Load Error:", e.message);
+    }
+  };
+
+  const fetchMyChores = async (uid) => {
+    try {
+      const { data } = await supabase.from("chores").select("*").eq("user_id", uid);
+      if (data) setMyChores(data);
+    } catch (e) {
+      console.log("Error fetching tasks:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleChoreStatus = async (chore) => {
+    const newStatus = chore.status === 'completed' ? 'pending' : 'completed';
+    try {
+      const { error } = await supabase
+        .from("chores")
+        .update({ status: newStatus })
+        .eq("id", chore.id);
+
+      if (error) throw error;
+      setMyChores(myChores.map(c => c.id === chore.id ? { ...c, status: newStatus } : c));
+    } catch (e) {
+      Alert.alert("Update Error", e.message);
     }
   };
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission Denied", "Gallery access is needed.");
-      return;
-    }
+    if (status !== "granted") return Alert.alert("Permission Denied", "Gallery access is needed.");
+    
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5
@@ -147,60 +113,92 @@ export default function Profile() {
   };
 
   const saveProfile = async () => {
-    let finalPicUrl = avatarUri;
+    if (!name.trim()) return Alert.alert("Validation Error", "Name cannot be blank.");
+
     try {
-      if (avatarUri && avatarUri.startsWith("file://")) {
-        const response = await fetch(avatarUri);
-        const blob = await response.blob();
-        const storageRef = ref(storage, `profile_pics/${auth.currentUser.uid}`);
-        await uploadBytes(storageRef, blob);
-        finalPicUrl = await getDownloadURL(storageRef);
+      setLoading(true);
+      let finalPublicUrl = avatarUri;
+
+      if (avatarUri && (avatarUri.startsWith("file://") || avatarUri.startsWith("blob:") || avatarUri.startsWith("data:") || avatarUri.startsWith("content://"))) {
+        try {
+          const fileExt = avatarUri.split('.').pop()?.split('?')[0] || 'jpg';
+          const fileName = `${Date.now()}.${fileExt}`;
+          const filePath = `${userId}/${fileName}`; 
+          const contentType = `image/${fileExt === 'png' ? 'png' : 'jpeg'}`;
+
+          let fileBody;
+
+          if (Platform.OS === 'web') {
+            const response = await fetch(avatarUri);
+            fileBody = await response.blob();
+          } else {
+            fileBody = new FormData();
+            fileBody.append('file', {
+              uri: avatarUri,
+              name: fileName,
+              type: contentType,
+            });
+          }
+
+          const { error: uploadError } = await supabase.storage
+            .from("avatars")
+            .upload(filePath, fileBody, { contentType, upsert: true });
+
+          if (uploadError) throw uploadError;
+
+          const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+          finalPublicUrl = urlData.publicUrl;
+        } catch (storageErr) {
+          console.error("Storage Error Detail:", storageErr);
+          Alert.alert("Storage Error", "Upload failed.");
+          setLoading(false);
+          return; 
+        }
       }
 
-      await setDoc(doc(db, "users", auth.currentUser.uid), {
-        name,
-        number: num,
-        bio,
-        profilePic: finalPicUrl,
-        email: auth.currentUser.email
-      });
+      const { error } = await supabase
+        .from("profiles")
+        .update({ name: name.trim(), phone: num.trim(), bio: bio.trim(), profile_pic: finalPublicUrl })
+        .eq("id", userId);
+
+      if (error) throw error;
 
       setEdit(false);
       Alert.alert("Success", "Profile updated!");
+      loadProfile(userId);
     } catch (e) {
       Alert.alert("Error", e.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   const deleteChore = async (choreId) => {
     try {
-      await deleteDoc(doc(db, "chores", choreId));
+      const { error } = await supabase.from("chores").delete().eq("id", choreId);
+      if (error) throw error;
+      
+      setMyChores((prev) => prev.filter(c => c.id !== choreId));
+      Alert.alert("Deleted", "Task has been removed.");
     } catch (e) {
       Alert.alert("Delete Error", e.message);
     }
   };
 
-  const toggleChoreComplete = async (chore) => {
-    try {
-      await updateDoc(doc(db, "chores", chore.id), { completed: !chore.completed });
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    }
-  };
-
   const handleUpdateChore = async () => {
-    if (!editDesc || !editBudget)
+    if (!editDesc.trim() || !editBudget.toString().trim()) {
       return Alert.alert("Error", "Fields cannot be empty");
+    }
     try {
-      const choreRef = doc(db, "chores", editingChore.id);
-      await updateDoc(choreRef, {
-        description: editDesc,
-        budget: editBudget,
-        location: editingChore.location || ""
-      });
+      const { error } = await supabase
+        .from("chores")
+        .update({ description: editDesc.trim(), budget: editBudget })
+        .eq("id", editingChore.id);
+
+      if (error) throw error;
+      
       setEditingChore(null);
-      setEditDesc("");
-      setEditBudget("");
+      await fetchMyChores(userId);
       Alert.alert("Success", "Task updated!");
     } catch (e) {
       Alert.alert("Update Error", e.message);
@@ -208,394 +206,136 @@ export default function Profile() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
-    router.replace("/login");
+    try {
+      await supabase.auth.signOut();
+      router.replace("/login"); 
+    } catch (error) {
+      Alert.alert("Error", "Could not log out.");
+    }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#8FCACA" />
-      </View>
-    );
-  }
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#660005" /></View>;
 
   return (
-    <ScrollView style={{ backgroundColor: "#D4F0F0" }}>
+    <ScrollView style={{ backgroundColor: "#FFFF" }}>
       <View style={styles.container}>
-        {/* Profile Avatar */}
         <TouchableOpacity onPress={pickImage} style={styles.avatar}>
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-          ) : (
-            <Text style={{ fontSize: 50 }}>👤</Text>
-          )}
-          {edit && (
-            <View style={styles.editOverlay}>
-              <Text style={{ color: "white", fontSize: 10 }}>CHANGE</Text>
-            </View>
-          )}
+          {avatarUri ? <Image source={{ uri: avatarUri }} style={styles.avatarImage} /> : <Text style={{ fontSize: 50 }}>👤</Text>}
+          {edit && <View style={styles.editOverlay}><Text style={{ color: "white", fontSize: 10 }}>CHANGE</Text></View>}
         </TouchableOpacity>
 
-        {/* Profile Info */}
         {edit ? (
           <View style={styles.editContainer}>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="Username"
-            />
-            <TextInput
-              style={styles.input}
-              value={num}
-              onChangeText={setNum}
-              placeholder="Phone"
-              keyboardType="phone-pad"
-            />
-            <TextInput
-              style={[styles.input, { height: 80 }]}
-              value={bio}
-              onChangeText={setBio}
-              placeholder="Bio"
-              multiline
-            />
-            <TouchableOpacity style={styles.btnSave} onPress={saveProfile}>
-              <Text style={styles.btnText}>SAVE CHANGES</Text>
-            </TouchableOpacity>
+            <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Username" />
+            <TextInput style={styles.input} value={num} onChangeText={setNum} placeholder="Phone" keyboardType="phone-pad" />
+            <TextInput style={[styles.input, { height: 80 }]} value={bio} onChangeText={setBio} placeholder="Bio" multiline />
+            <TouchableOpacity style={styles.btnSave} onPress={saveProfile}><Text style={styles.btnText}>SAVE CHANGES</Text></TouchableOpacity>
           </View>
         ) : (
           <View style={styles.profileCard}>
             <Text style={styles.nameText}>{name || "Anonymous User"}</Text>
             <Text style={styles.numText}>{num || "No phone added"}</Text>
             <Text style={styles.bioText}>{bio || "No bio added"}</Text>
-            <TouchableOpacity style={styles.btnEdit} onPress={() => setEdit(true)}>
-              <Text style={styles.btnText}>EDIT PROFILE</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnEdit} onPress={() => setEdit(true)}><Text style={styles.btnText}>EDIT PROFILE</Text></TouchableOpacity>
           </View>
         )}
 
-        {/* Ratings & Reviews */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Ratings & Reviews</Text>
-          {numReviews === 0 ? (
-            <Text style={styles.emptyText}>No reviews yet.</Text>
-          ) : (
-            <>
-              <Text style={{ textAlign: "center", marginBottom: 10 }}>
-                ⭐ {averageRating.toFixed(1)} / 5 ({numReviews} reviews)
-              </Text>
-              {reviews.map((rev) => (
-                <View key={rev.id} style={styles.reviewCard}>
-                  <Text style={{ fontWeight: "bold" }}>{rev.rating} ⭐</Text>
-                  <Text>{rev.comment}</Text>
-                </View>
-              ))}
-            </>
-          )}
-        </View>
-
-        {/* My Posted Chores */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>My Posted Tasks</Text>
           {myChores.length === 0 ? (
-            <Text style={styles.emptyText}>You haven't posted any chores yet.</Text>
+            <Text style={{ textAlign: "center", color: "#666", marginTop: 10 }}>No tasks posted yet.</Text>
           ) : (
             myChores.map((chore) => (
               <View key={chore.id} style={styles.miniCard}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={{ fontWeight: "bold", fontSize: 16 }}>{chore.category}</Text>
-                  <Text style={{ color: "#666" }} numberOfLines={2}>{chore.description}</Text>
-                  <Text style={{ color: "#666" }}>{chore.location || "No location"}</Text>
-                  <Text style={{ color: "green", fontWeight: "bold" }}>₱{chore.budget}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: "bold", fontSize: 18 }}>{chore.category}</Text>
+                  <Text style={{ fontSize: 16, marginVertical: 4 }}>{chore.description}</Text>
+                  <Text style={{ color: "green", fontWeight: "bold", fontSize: 16 }}>₱{chore.budget}</Text>
+                  <Text style={{ 
+                    fontSize: 14, 
+                    fontWeight: "bold", 
+                    marginTop: 5, 
+                    color: chore.status === 'completed' ? '#FFFF' : '#660005',
+                    fontStyle: 'italic' 
+                  }}>
+                    {chore.status?.toUpperCase() || 'PENDING'}
+                  </Text>
                 </View>
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, { backgroundColor: "#CBAACB" }]}
-                    onPress={() => {
-                      setEditingChore(chore);
-                      setEditDesc(chore.description);
-                      setEditBudget(chore.budget);
+                  <TouchableOpacity style={[styles.smallBtn, { backgroundColor: "#F4C2C2", padding: 10 }]} onPress={() => toggleChoreStatus(chore)}>
+                    <Text style={{ color: "#660005", fontWeight: "bold", fontSize: 14 }}>{chore.status === 'completed' ? 'Undo' : 'Done'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.smallBtn, { backgroundColor: "#660005", padding: 10 }]} 
+                    onPress={() => { 
+                      setEditingChore(chore); 
+                      setEditDesc(chore.description); 
+                      setEditBudget(chore.budget.toString()); 
                     }}
                   >
-                    <Text style={{ color: "#FFF", fontWeight: "bold" }}>Edit</Text>
+                    <Text style={{ color: "#FFFF", fontWeight: "bold", fontSize: 14 }}>Edit</Text>
                   </TouchableOpacity>
-                  <Pressable
-                    style={[styles.smallBtn, { backgroundColor: "#FFF0F0", marginTop: 6 }]}
-                    onPress={() => deleteChore(chore.id)}
-                  >
-                    <Text style={{ color: "red", fontWeight: "bold" }}>Delete</Text>
+                  <Pressable style={[styles.smallBtn, { backgroundColor: "#FFFF", padding: 10 }]} onPress={() => deleteChore(chore.id)}>
+                    <Text style={{ color: "red", fontWeight: "bold", fontSize: 14 }}>Delete</Text>
                   </Pressable>
-                  <TouchableOpacity
-                    style={{ marginTop: 5 }}
-                    onPress={() => toggleChoreComplete(chore)}
-                  >
-                    <Text style={{ color: chore.completed ? "green" : "gray", fontWeight: "bold" }}>
-                      {chore.completed ? "✔ Completed" : "Mark Complete"}
-                    </Text>
-                  </TouchableOpacity>
                 </View>
               </View>
             ))
           )}
         </View>
 
-        {/* Accepted Chores */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Accepted Tasks</Text>
-          {acceptedChores.length === 0 ? (
-            <Text style={styles.emptyText}>No accepted tasks yet.</Text>
-          ) : (
-            acceptedChores.map((chore) => (
-              <View key={chore.id} style={styles.miniCard}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={{ fontWeight: "bold", fontSize: 16 }}>{chore.category}</Text>
-                  <Text style={{ color: "#666" }} numberOfLines={2}>{chore.description}</Text>
-                  <Text style={{ color: "#666" }}>{chore.location || "No location"}</Text>
-                  <Text style={{ color: "green", fontWeight: "bold" }}>₱{chore.budget}</Text>
-                </View>
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={{ marginTop: 5 }}
-                    onPress={() => toggleChoreComplete(chore)}
-                  >
-                    <Text style={{ color: chore.completed ? "green" : "gray", fontWeight: "bold" }}>
-                      {chore.completed ? "✔ Completed" : "Mark Complete"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
-          )}
-        </View>
+        <TouchableOpacity style={styles.btnLogout} onPress={handleLogout}><Text style={styles.logoutText}>LOGOUT</Text></TouchableOpacity>
+      </View>
 
-        {/* Edit Modal */}
-        <Modal visible={editingChore !== null} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Edit Task</Text>
-              <TextInput
-                style={[styles.input, { height: 80 }]}
-                multiline
-                value={editDesc}
-                onChangeText={setEditDesc}
-              />
-              <TextInput
-                style={styles.input}
-                value={editBudget}
-                onChangeText={setEditBudget}
-                placeholder="Budget"
-                keyboardType="numeric"
-              />
-              <TextInput
-                style={styles.input}
-                value={editingChore?.location || ""}
-                onChangeText={(text) =>
-                  setEditingChore({ ...editingChore, location: text })
-                }
-                placeholder="Location"
-              />
-              <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-                <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: "#CCC" }]}
-                  onPress={() => setEditingChore(null)}
-                >
-                  <Text>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: "#8FCACA" }]}
-                  onPress={handleUpdateChore}
-                >
-                  <Text style={{ fontWeight: "bold" }}>Update</Text>
-                </TouchableOpacity>
-              </View>
+      <Modal visible={editingChore !== null} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Task Details</Text>
+            <Text style={styles.label}>Description</Text>
+            <TextInput style={[styles.input, { height: 70 }]} value={editDesc} onChangeText={setEditDesc} multiline />
+            <Text style={styles.label}>Budget (₱)</Text>
+            <TextInput style={styles.input} value={editBudget} onChangeText={setEditBudget} keyboardType="numeric" />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#660005" }]} onPress={() => setEditingChore(null)}>
+                <Text style={styles.btnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#DF8F9C" }]} onPress={handleUpdateChore}>
+                <Text style={styles.btnText}>Save</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-
-        <TouchableOpacity style={styles.btnLogout} onPress={handleLogout}>
-          <Text style={styles.logoutText}>LOGOUT</Text>
-        </TouchableOpacity>
-      </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { 
-    flex: 1, 
-    justifyContent: "center", 
-    alignItems: "center", 
-    backgroundColor: "#D4F0F0" 
-  },
-
-  container: { 
-    flex: 1, 
-    alignItems: "center", 
-    padding: 20, 
-    paddingTop: 40 
-  },
-
-  avatar: { 
-    width: 120, 
-    height: 120, 
-    borderRadius: 60, 
-    backgroundColor: "#FFF", 
-    justifyContent: "center", 
-    alignItems: "center", 
-    marginBottom: 20, 
-    elevation: 5, 
-    overflow: "hidden" 
-  },
-
-  avatarImage: { 
-    width: "100%", 
-    height: "100%" 
-  },
-
-  editOverlay: { 
-    position: "absolute", 
-    bottom: 0, 
-    left: 0, 
-    right: 0, 
-    backgroundColor: "rgba(0,0,0,0.6)", 
-    height: 25, 
-    justifyContent: "center", 
-    alignItems: "center" 
-  },
-
-  input: { 
-    backgroundColor: "#FFF", 
-    width: "100%", 
-    padding: 15, 
-    borderRadius: 12, 
-    marginBottom: 10, 
-    borderWidth: 1, 
-    borderColor: "#CBAACB" 
-  },
-
-  profileCard: { 
-    backgroundColor: "#FFF", 
-    width: "100%", 
-    padding: 20, 
-    borderRadius: 20, 
-    alignItems: "center", 
-    marginBottom: 20, 
-    elevation: 5 
-  },
-
-  editContainer: { 
-    width: "100%", 
-    alignItems: "center", 
-    marginBottom: 20 
-  },
-
-  bioText: { 
-    fontSize: 14, 
-    color: "#666", 
-    marginBottom: 10, 
-    textAlign: "center" 
-  },
-
-  nameText: { 
-    fontSize: 24, 
-    fontWeight: "bold" 
-  },
-
-  numText: { 
-    fontSize: 14, 
-    color: "#666", 
-    marginBottom: 5 
-  },
-
-  btnSave: { 
-    backgroundColor: "#8FCACA", 
-    padding: 15, 
-    borderRadius: 25, 
-    width: 200, 
-    alignItems: "center" 
-  },
-
-  btnEdit: { 
-    backgroundColor: "#CBAACB", 
-    padding: 12, 
-    borderRadius: 25, 
-    width: 150, 
-    alignItems: "center" 
-  },
-
-  btnText: { 
-    color: "#FFF", 
-    fontWeight: "bold" 
-  },
-
-  section: { 
-    width: "100%", 
-    marginTop: 30 
-  },
-
-  sectionTitle: { 
-    fontSize: 20, 
-    fontWeight: "bold", 
-    marginBottom: 15, 
-    textAlign: "center" 
-  },
-
-  miniCard: { 
-    backgroundColor: "#FFF", 
-    padding: 15, 
-    borderRadius: 15, 
-    marginBottom: 10, 
-    flexDirection: "row", 
-    alignItems: "center", 
-    elevation: 3 
-  },
-
-  actionButtons: { 
-    justifyContent: "center", 
-    alignItems: "center" 
-  },
-
-  smallBtn: { 
-    padding: 8, 
-    borderRadius: 8, 
-    alignItems: "center", 
-    width: 80 
-  },
-
-  emptyText: { 
-    textAlign: "center", 
-    color: "#777", 
-    marginTop: 10 
-  },
-
-  btnLogout: { 
-    marginTop: 40, 
-    padding: 15, 
-    width: "100%", 
-    alignItems: "center", 
-    borderRadius: 12, 
-    borderWidth: 1, 
-    borderColor: "#FF4444", 
-    marginBottom: 40 
-  },
-
-  logoutText: { 
-    color: "#FF4444", 
-    fontWeight: "bold" 
-  },
-
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: "rgba(0,0,0,0.5)", 
-    justifyContent: "center", 
-    alignItems: "center" 
-  },
-
-  modalContent: { 
-    backgroundColor: "#FFF", 
-    width: "85%", 
-    padding: 20
-  }
-  
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFF" },
+  container: { flex: 1, alignItems: "center", padding: 20, paddingTop: 40 },
+  avatar: { width: 120, height: 120, borderRadius: 60, backgroundColor: "#FFFF", justifyContent: "center", alignItems: "center", marginBottom: 20, elevation: 5, overflow: "hidden" },
+  avatarImage: { width: "100%", height: "100%" },
+  editOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.6)", height: 25, justifyContent: "center", alignItems: "center" },
+  input: { backgroundColor: "#DF8F9C", width: "100%", padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: "#660005" },
+  profileCard: { backgroundColor: "#DF8F9C", width: "100%", padding: 20, borderRadius: 20, alignItems: "center", marginBottom: 20, elevation: 5 },
+  editContainer: { width: "100%", alignItems: "center", marginBottom: 20 },
+  btnSave: { backgroundColor: "#660005", padding: 15, borderRadius: 25, width: 200, alignItems: "center" },
+  btnEdit: { backgroundColor: "#660005", padding: 12, borderRadius: 25, width: 150, alignItems: "center" },
+  btnText: { color: "#FFFF", fontWeight: "bold" },
+  section: { width: "100%", marginTop: 30 },
+  sectionTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
+  miniCard: { backgroundColor: "#DF8F9C", padding: 15, borderRadius: 15, marginBottom: 10, flexDirection: "row", alignItems: "center", elevation: 3 },
+  actionButtons: { justifyContent: "center", alignItems: "center" },
+  smallBtn: { borderRadius: 8, alignItems: "center", width: 80, marginBottom: 5 },
+  btnLogout: { marginTop: 40, padding: 15, width: "100%", alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: "#FF4444", marginBottom: 40 },
+  logoutText: { color: "#FF4444", fontWeight: "bold" },
+  nameText: { fontSize: 24, fontWeight: "bold" },
+  numText: { fontSize: 14, color: "#FFFF", marginBottom: 5, fontWeight: "600" },
+  bioText: { fontSize: 14, color: "#FFFF", marginBottom: 10, textAlign: "center" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalContent: { backgroundColor: "#FFFF", width: "85%", padding: 20, borderRadius: 20, elevation: 10 },
+  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
+  label: { fontWeight: "600", color: "#444", marginBottom: 5, alignSelf: "flex-start" },
+  modalActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 15, width: "100%" },
+  modalBtn: { padding: 12, borderRadius: 20, width: "45%", alignItems: "center" }
 });

@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect } from "react";
 import * as ScreenCapture from "expo-screen-capture";
 import { Platform } from "react-native";
+import 'react-native-gesture-handler';
 
 export default function TasksLayout() {
   useEffect(() => {
@@ -18,14 +19,14 @@ export default function TasksLayout() {
         headerShown: false,
 
         tabBarStyle: {
-          backgroundColor: "#FFC5BF",
+          backgroundColor: "#FFFF",
           height: 70,
           paddingBottom: 15,
           paddingTop: 6,
         },
 
-        tabBarActiveTintColor: "#8FCACA",
-        tabBarInactiveTintColor: "#555",
+        tabBarActiveTintColor: "#DF8F9C",
+        tabBarInactiveTintColor: "#660005",
 
         // 👇 tab label below the icon
         tabBarLabelPosition: "below-icon",

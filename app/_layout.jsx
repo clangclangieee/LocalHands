@@ -23,6 +23,9 @@ export default function RootLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="signup" />
 
+        {/* Admin Screens Group */}
+        <Stack.Screen name="admin" />
+
         {/* Main App (Tabs inside tasks) */}
         <Stack.Screen name="tasks" />
       </Stack>

@@ -9,17 +9,10 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert
+  Alert,
+  Platform
 } from "react-native";
-import {
-  collection,
-  onSnapshot,
-  doc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp
-} from "firebase/firestore";
-import { db } from "../../firebaseConfig";
+import { supabase } from "../../supabaseConfig";
 import { useRouter } from "expo-router";
 
 export default function Users() {
@@ -27,93 +20,91 @@ export default function Users() {
   const [search, setSearch] = useState("");
   const router = useRouter();
 
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "users"), (snap) => {
-      setUsers(
-        snap.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-      );
-    });
+  const fetchUsersList = async () => {
+    const { data, error } = await supabase.from("profiles").select("*");
+    if (error) console.error(error.message);
+    if (data) setUsers(data);
+  };
 
-    return unsub;
+  useEffect(() => {
+    fetchUsersList();
+
+    const syncChannel = supabase
+      .channel("users_sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => fetchUsersList())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(syncChannel);
+    };
   }, []);
 
   const toggleBan = async (id, current, name) => {
     try {
-      const userRef = doc(db, "users", id);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ banned: !current })
+        .eq("id", id);
 
-      if (!current) {
-        await updateDoc(userRef, {
-          banned: true,
-          bannedAt: serverTimestamp(),
-          banReason: "Violation of community guidelines",
-          notification:
-            "Your account has been banned by admin."
-        });
+      if (error) throw error;
+      
+      const title = !current ? "User Banned" : "User Unbanned";
+      const message = `${name || "User"} status has been updated.`;
 
-        Alert.alert(
-          "User Banned",
-          `${name || "User"} has been banned.`
-        );
-      } else {
-        await updateDoc(userRef, {
-          banned: false,
-          bannedAt: null,
-          banReason: null,
-          notification:
-            "Your account has been unbanned."
-        });
+      if (Platform.OS === 'web') alert(`${title}: ${message}`);
+      else Alert.alert(title, message);
 
-        Alert.alert(
-          "User Unbanned",
-          `${name || "User"} has been unbanned.`
-        );
-      }
+      fetchUsersList();
     } catch (error) {
-      Alert.alert("Error", error.message);
+      if (Platform.OS === 'web') alert("Error: " + error.message);
+      else Alert.alert("Error", error.message);
     }
   };
 
   const deleteUser = async (id) => {
-    Alert.alert("Delete User", "Are you sure?", [
-      { text: "Cancel" },
-      {
-        text: "Delete",
-        onPress: async () => {
-          await deleteDoc(doc(db, "users", id));
-        }
+    if (!id) return;
+
+    const executeUserDeletion = async () => {
+      const { error } = await supabase.from("profiles").delete().eq("id", id);
+      if (!error) {
+        if (Platform.OS === 'web') alert("User account removed.");
+        else Alert.alert("Success", "User account removed.");
+        fetchUsersList();
+      } else {
+        if (Platform.OS === 'web') alert("Deletion Failed: " + error.message);
+        else Alert.alert("Error", error.message);
       }
-    ]);
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmWeb = window.confirm("Are you sure you want to delete this user profile?");
+      if (confirmWeb) executeUserDeletion();
+    } else {
+      Alert.alert("Delete User", "Are you sure?", [
+        { text: "Cancel" },
+        { text: "Delete", style: "destructive", onPress: executeUserDeletion }
+      ]);
+    }
   };
 
-  const filtered = users.filter((u) =>
-    (u.name || "")
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const filtered = users.filter((u) => {
+    const nameMatch = (u.name || "").toLowerCase().includes(search.toLowerCase());
+    const emailMatch = (u.email || "").toLowerCase().includes(search.toLowerCase());
+    return nameMatch || emailMatch;
+  });
 
   return (
     <ScrollView style={styles.container}>
-      
-      {/* TOP BAR */}
       <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-        >
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-
-        <Text style={styles.header}>
-          Manage Users
-        </Text>
+        <Text style={styles.header}>Manage Users</Text>
       </View>
 
       <TextInput
         style={styles.search}
-        placeholder="Search users..."
+        placeholder="Search users by name or email..."
         placeholderTextColor="#999"
         value={search}
         onChangeText={setSearch}
@@ -121,49 +112,34 @@ export default function Users() {
 
       {filtered.map((user) => (
         <View key={user.id} style={styles.card}>
-          <Text style={styles.name}>
-            {user.name || "No Name"}
-          </Text>
-
-          <Text style={styles.email}>
-            {user.email || "No Email"}
-          </Text>
-
-          <Text style={styles.role}>
-            Role: {user.role || "user"}
-          </Text>
-
+          <Text style={styles.name}>{user.name || "No Name"}</Text>
+          <Text style={styles.email}>{user.email || "No Email"}</Text>
+          <Text style={styles.role}>Role: {user.role || "user"}</Text>
+          
+          {/* 🔄 Dynamic Status Indicator Label */}
           <Text style={styles.status}>
-            Status: {user.banned ? "BANNED" : "ACTIVE"}
+            Status:{" "}
+            <Text style={user.banned ? styles.bannedText : styles.activeText}>
+              {user.banned ? "BANNED" : "ACTIVE"}
+            </Text>
           </Text>
 
           <View style={styles.row}>
+            {/* 🔄 Dynamic Ban/Unban Interactive Toggle Button */}
             <TouchableOpacity
-              style={styles.banBtn}
-              onPress={() =>
-                toggleBan(
-                  user.id,
-                  user.banned,
-                  user.name
-                )
-              }
+              style={[
+                styles.banBtn,
+                user.banned ? styles.unbanBtnVariant : styles.banBtnVariant
+              ]}
+              onPress={() => toggleBan(user.id, user.banned, user.name)}
             >
-              <Text style={styles.btnText}>
-                {user.banned
-                  ? "Unban User"
-                  : "Ban User"}
+              <Text style={[styles.btnText, user.banned && { color: "#000" }]}>
+                {user.banned ? "Unban User" : "Ban User"}
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.deleteBtn}
-              onPress={() =>
-                deleteUser(user.id)
-              }
-            >
-              <Text style={styles.btnText}>
-                Delete
-              </Text>
+            <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteUser(user.id)}>
+              <Text style={styles.btnText}>Delete</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -173,97 +149,23 @@ export default function Users() {
 }
 
 const styles = StyleSheet.create({
-  container:{
-    flex:1,
-    backgroundColor:"#0F172A",
-    padding:15
-  },
-
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 15
-  },
-
-  backBtn: {
-    width: 70
-  },
-
-  backText: {
-    color: "#38BDF8",
-    fontSize: 16,
-    fontWeight: "bold"
-  },
-
-  header: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "bold",
-    textAlign: "center",
-    flex: 1
-  },
-
-  search:{
-    backgroundColor:"#1E293B",
-    color:"#fff",
-    padding:12,
-    borderRadius:10,
-    marginBottom:15
-  },
-
-  card:{
-    backgroundColor:"#1E293B",
-    padding:15,
-    borderRadius:12,
-    marginBottom:12
-  },
-
-  name:{
-    color:"#fff",
-    fontSize:18,
-    fontWeight:"bold"
-  },
-
-  email:{
-    color:"#CBD5E1",
-    marginTop:4
-  },
-
-  role:{
-    color:"#8FCACA",
-    marginTop:4
-  },
-
-  status:{
-    color:"#F3B0C3",
-    marginTop:4,
-    marginBottom:10
-  },
-
-  row:{
-    flexDirection:"row",
-    justifyContent:"space-between"
-  },
-
-  banBtn:{
-    flex:1,
-    backgroundColor:"#8FCACA",
-    padding:10,
-    borderRadius:8,
-    marginRight:8
-  },
-
-  deleteBtn:{
-    flex:1,
-    backgroundColor:"#F87171",
-    padding:10,
-    borderRadius:8
-  },
-
-  btnText:{
-    color:"#fff",
-    textAlign:"center",
-    fontWeight:"bold"
-  }
+  container: { flex: 1, backgroundColor: "#0F172A", padding: 15 },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15 },
+  backBtn: { width: 70 },
+  backText: { color: "#DF8F9C", fontSize: 16, fontWeight: "bold" },
+  header: { color: "#fff", fontSize: 24, fontWeight: "bold", textAlign: "center", flex: 1 },
+  search: { backgroundColor: "#1E293B", color: "#fff", padding: 12, borderRadius: 10, marginBottom: 15 },
+  card: { backgroundColor: "#1E293B", padding: 15, borderRadius: 12, marginBottom: 12 },
+  name: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  email: { color: "#CBD5E1", marginTop: 4 },
+  role: { color: "#DF8F9C", marginTop: 4 },
+  status: { color: "#94A3B8", marginTop: 4, marginBottom: 10 },
+  activeText: { color: "#22C55E", fontWeight: "bold" },
+  bannedText: { color: "#F87171", fontWeight: "bold" },
+  row: { flexDirection: "row", justifyContent: "space-between" },
+  banBtn: { flex: 1, padding: 10, borderRadius: 8, marginRight: 8 },
+  banBtnVariant: { backgroundColor: "#DF8F9C" },
+  unbanBtnVariant: { backgroundColor: "#EAB308" }, // Distinctive caution yellow for unbanning
+  deleteBtn: { flex: 1, backgroundColor: "#F87171", padding: 10, borderRadius: 8 },
+  btnText: { color: "#fff", textAlign: "center", fontWeight: "bold" }
 });

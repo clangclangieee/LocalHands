@@ -2,45 +2,62 @@
 // FILE: app/admin/_layout.jsx
 // ================================
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Platform, Alert } from "react-native";
 import { Slot, useRouter } from "expo-router";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth, db } from "../../firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
+import { supabase } from "../../supabaseConfig";
 
 export default function AdminGuard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        router.replace("/");
-        return;
-      }
+    let isMounted = true;
 
+    const checkAdminSession = async () => {
       try {
-        const snap = await getDoc(doc(db, "users", user.uid));
-
-        if (!snap.exists()) {
-          router.replace("/");
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session?.user) {
+          if (isMounted) router.replace("/");
           return;
         }
 
-        const data = snap.data();
+        const { data: userData, error } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", session.user.id)
+          .maybeSingle();
 
-        if (data.role !== "admin") {
-          router.replace("/");
+        if (error || !userData || userData.role !== "admin") {
+          const deniedMsg = "Access denied. Role is not admin or profile missing.";
+          console.log(deniedMsg);
+          
+          if (Platform.OS === 'web') alert(deniedMsg);
+          else Alert.alert("Unauthorized", deniedMsg);
+
+          if (isMounted) router.replace("/");
           return;
         }
 
-        setLoading(false);
+        if (isMounted) setLoading(false);
       } catch (err) {
+        console.error("Admin guard error:", err.message);
+        if (isMounted) router.replace("/");
+      }
+    };
+
+    checkAdminSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT" && isMounted) {
         router.replace("/");
       }
     });
 
-    return unsub;
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   if (loading) {
@@ -53,7 +70,7 @@ export default function AdminGuard() {
           alignItems: "center"
         }}
       >
-        <ActivityIndicator size="large" color="#8FCACA" />
+        <ActivityIndicator size="large" color="#DF8F9C" />
       </View>
     );
   }
