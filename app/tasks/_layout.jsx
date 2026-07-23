@@ -39,7 +39,7 @@ export default function TasksLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="home-outline" size={24} color={color} />,
         }}
       />
 
@@ -47,7 +47,7 @@ export default function TasksLayout() {
         name="search"
         options={{
           title: "Search",
-          tabBarIcon: ({ color }) => <Ionicons name="search" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="search-outline" size={24} color={color} />,
         }}
       />
 
@@ -55,7 +55,7 @@ export default function TasksLayout() {
         name="create"
         options={{
           title: "Create",
-          tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={28} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="add-outline" size={28} color={color} />,
         }}
       />
 
@@ -63,7 +63,7 @@ export default function TasksLayout() {
         name="message"
         options={{
           title: "Messages",
-          tabBarIcon: ({ color }) => <Ionicons name="chatbubble" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="chatbubble-outline" size={24} color={color} />,
         }}
       />
 
@@ -71,7 +71,7 @@ export default function TasksLayout() {
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={24} color={color} />,
         }}
       />
     </Tabs>

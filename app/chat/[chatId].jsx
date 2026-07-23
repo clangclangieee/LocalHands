@@ -29,49 +29,58 @@ export default function ChatScreen() {
   const isSameDay = (d1, d2) => new Date(d1).toDateString() === new Date(d2).toDateString();
 
   useEffect(() => {
-    if (!chatId) return;
+  if (!chatId) return;
 
-    // 1. Initial data fetching
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) setCurrentUserId(user.id);
+  let channel;
 
-      const parts = chatId.split('_');
-      const recipientId = parts.length > 1 
-        ? (parts[0] === user?.id ? parts[1] : parts[0]) 
-        : chatId;
+  // 1. Initial data fetching
+  const init = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) setCurrentUserId(user.id);
 
-      const { data: chatData, error } = await supabase
-        .from("profiles") 
-        .select("name, profile_pic")
-        .eq("id", recipientId)
-        .single();
-      
-      if (error) {
-        console.error("Error fetching profile:", error);
-      } else if (chatData) {
-        setRecipient({ name: chatData.name, avatar: chatData.profile_pic });
-      }
-    };
+    const parts = chatId.split('_');
+    const recipientId = parts.length > 1 
+      ? (parts[0] === user?.id ? parts[1] : parts[0]) 
+      : chatId;
 
-    const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("chat_id", chatId)
-        .order("created_at", { ascending: true });
-      if (error) console.log(error);
-      else setMessages(data || []);
-    };
+    const { data: chatData, error } = await supabase
+      .from("profiles") 
+      .select("name, profile_pic")
+      .eq("id", recipientId)
+      .single();
+    
+    if (error) {
+      console.error("Error fetching profile:", error);
+    } else if (chatData) {
+      setRecipient({ name: chatData.name, avatar: chatData.profile_pic });
+    }
+  };
 
-    init();
-    fetchMessages();
+  const fetchMessages = async () => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true });
+    if (error) console.log(error);
+    else setMessages(data || []);
+  };
 
-    // 2. Setup Realtime Channel
-    const channel = supabase.channel(`chat-room-${chatId}`);
+  init();
+  fetchMessages();
 
-    // 3. Attach listeners FIRST, then subscribe
-    channel
+  // 2. Setup Realtime Channel safely
+  const setupSubscription = async () => {
+    // Remove any stale channel with this name before creating a new one
+    const channelName = `chat-room-${chatId}`;
+    const existingChannel = supabase.getChannels().find(ch => ch.topic === `realtime:${channelName}`);
+    if (existingChannel) {
+      await supabase.removeChannel(existingChannel);
+    }
+
+    // Attach listeners FIRST, then subscribe
+    channel = supabase
+      .channel(channelName)
       .on(
         "postgres_changes", 
         { event: "*", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, 
@@ -82,12 +91,17 @@ export default function ChatScreen() {
         }
       )
       .subscribe();
+  };
 
-    // 4. Cleanup
-    return () => {
+  setupSubscription();
+
+  // 3. Cleanup on component unmount
+  return () => {
+    if (channel) {
       supabase.removeChannel(channel);
-    };
-  }, [chatId]);
+    }
+  };
+}, [chatId]);
 
   const handleSend = async () => {
     if (!text.trim()) return;
@@ -108,7 +122,6 @@ export default function ChatScreen() {
     setMenuModalVisible(false);
   };
 
-  // ... rest of your return block (JSX remains the same)
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === 'android' ? 20 : 0}>

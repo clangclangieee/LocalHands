@@ -76,36 +76,42 @@ export default function MessagePreview() {
   };
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      setCurrentUserId(user.id);
-      
-      // Initial fetch
-      await fetchChats(user.id);
+  let channel;
 
-      // Setup Realtime Channel using the ref
-      if (!channelRef.current) {
-        channelRef.current = supabase
-          .channel("inbox-live-sync")
-          .on(
-            "postgres_changes",
-            { event: "INSERT", schema: "public", table: "messages" },
-            () => fetchChats(user.id)
-          )
-          .subscribe();
-      }
-    };
+  const init = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setCurrentUserId(user.id);
+    
+    // Initial fetch
+    await fetchChats(user.id);
 
-    init();
+    // Clean up any lingering channel with this name first
+    const channelName = `inbox-live-sync-${user.id}`;
+    const existingChannel = supabase.getChannels().find(ch => ch.topic === `realtime:${channelName}`);
+    if (existingChannel) {
+      await supabase.removeChannel(existingChannel);
+    }
 
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, []);
+    // Create channel AFTER cleanup
+    channel = supabase
+      .channel(channelName)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        () => fetchChats(user.id)
+      )
+      .subscribe();
+  };
+
+  init();
+
+  return () => {
+    if (channel) {
+      supabase.removeChannel(channel);
+    }
+  };
+}, []);
 
   const openChat = (chatId) => router.push(`/chat/${chatId}`);
 
@@ -164,7 +170,7 @@ const styles = StyleSheet.create({
   chatLeft: { flexDirection: "row", flex: 1, alignItems: "center" },
   profilePic: { width: 50, height: 50, borderRadius: 25 },
   chatHeader: { flexDirection: "row", justifyContent: "space-between" },
-  userName: { fontWeight: "bold", fontSize: 16 },
+  userName: { fontWeight: "bold", fontSize: 16, color: "#660005" },
   timestamp: { fontSize: 12, color: "#555" },
   lastMessage: { fontSize: 14, color: "#333" },
   deleteBtn: { marginLeft: 10, justifyContent: "center", alignItems: "center", paddingHorizontal: 10 },
