@@ -72,7 +72,15 @@ export default function UserProfile() {
 
       const choresChannel = supabase
         .channel(`profile-chores-${userId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, () => fetchUserDataBlocks())
+        .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, (payload) => {
+          if (payload.eventType === "UPDATE") {
+            setPostedTasks((prev) =>
+              prev.map((task) => (task.id === payload.new.id ? { ...task, ...payload.new } : task))
+            );
+          } else {
+            fetchUserDataBlocks();
+          }
+        })
         .subscribe();
 
       const reviewsChannel = supabase
@@ -88,21 +96,36 @@ export default function UserProfile() {
   );
 
   const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
-    try {
-      if (!currentUser) return Alert.alert("Error", "Login to accept tasks");
+    if (!currentUser) return Alert.alert("Error", "Login to accept tasks");
 
-      if (currentAcceptedBy === currentUser.id) {
-        const { error } = await supabase.from("chores").update({ accepted_by: null }).eq("id", choreId);
-        if (error) throw error;
-        Alert.alert("Task Unaccepted");
-      } else if (!currentAcceptedBy) {
-        const { error } = await supabase.from("chores").update({ accepted_by: currentUser.id }).eq("id", choreId);
-        if (error) throw error;
-        Alert.alert("Task Accepted!");
-      } else {
-        Alert.alert("Task Already Accepted");
-      }
+    const newAcceptedBy = currentAcceptedBy === currentUser.id ? null : currentUser.id;
+
+    if (currentAcceptedBy && currentAcceptedBy !== currentUser.id) {
+      return Alert.alert("Task Already Accepted");
+    }
+
+    // 1. Optimistic Update: Change button state immediately in local UI
+    setPostedTasks((prev) =>
+      prev.map((task) =>
+        task.id === choreId ? { ...task, accepted_by: newAcceptedBy } : task
+      )
+    );
+
+    // 2. Execute DB update in background
+    try {
+      const { error } = await supabase
+        .from("chores")
+        .update({ accepted_by: newAcceptedBy })
+        .eq("id", choreId);
+
+      if (error) throw error;
     } catch (e) {
+      // 3. Rollback state if the update fails
+      setPostedTasks((prev) =>
+        prev.map((task) =>
+          task.id === choreId ? { ...task, accepted_by: currentAcceptedBy } : task
+        )
+      );
       Alert.alert("Error", e.message);
     }
   };
@@ -111,7 +134,6 @@ export default function UserProfile() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      // Redirects to your tasks/index.jsx as requested
       router.replace("/profile/tasks");
     }
   };

@@ -51,9 +51,17 @@ export default function CategoryView() {
       .channel(`chores-category-${type}`)
       .on(
         "postgres_changes",
-        { event: "*", scheme: "public", table: "chores", filter: `category=eq.${type}` },
-        () => {
-          fetchTasks(); // Re-fetch to keep user-profile relationships sound
+        { event: "*", schema: "public", table: "chores", filter: `category=eq.${type}` },
+        (payload) => {
+          if (payload.eventType === "UPDATE") {
+            setTasks((prev) =>
+              prev.map((task) =>
+                task.id === payload.new.id ? { ...task, ...payload.new } : task
+              )
+            );
+          } else {
+            fetchTasks(); // Re-fetch for inserts or deletions
+          }
         }
       )
       .subscribe();
@@ -68,30 +76,36 @@ export default function CategoryView() {
   };
 
   const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
+    if (!currentUserId) return Alert.alert("Error", "Login to accept tasks");
+
+    const newAcceptedBy = currentAcceptedBy === currentUserId ? null : currentUserId;
+
+    if (currentAcceptedBy && currentAcceptedBy !== currentUserId) {
+      return Alert.alert("Task Already Accepted");
+    }
+
+    // 1. Optimistic Update: Update state immediately so UI changes without delay
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === choreId ? { ...task, accepted_by: newAcceptedBy } : task
+      )
+    );
+
+    // 2. Database update in background
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return Alert.alert("Error", "Login to accept tasks");
+      const { error } = await supabase
+        .from("chores")
+        .update({ accepted_by: newAcceptedBy })
+        .eq("id", choreId);
 
-      if (currentAcceptedBy === user.id) {
-        const { error } = await supabase
-          .from("chores")
-          .update({ accepted_by: null })
-          .eq("id", choreId);
-
-        if (error) throw error;
-        Alert.alert("Task Unaccepted");
-      } else if (!currentAcceptedBy) {
-        const { error } = await supabase
-          .from("chores")
-          .update({ accepted_by: user.id })
-          .eq("id", choreId);
-
-        if (error) throw error;
-        Alert.alert("Task Accepted!");
-      } else {
-        Alert.alert("Task Already Accepted");
-      }
+      if (error) throw error;
     } catch (e) {
+      // 3. Roll back local state if the network call fails
+      setTasks((prev) =>
+        prev.map((task) =>
+          task.id === choreId ? { ...task, accepted_by: currentAcceptedBy } : task
+        )
+      );
       Alert.alert("Error", e.message);
     }
   };
@@ -115,16 +129,15 @@ export default function CategoryView() {
 
           if (item.accepted_by === currentUserId) {
             buttonColor = "#FFFF";
-            textColor = "#DF8F9C"
+            textColor = "#DF8F9C";
             buttonText = "Unaccept Task";
           } else if (item.accepted_by) {
             buttonColor = "#FFFF";
-            textColor = "#660005"
+            textColor = "#660005";
             buttonText = "Already Accepted";
             disabled = true;
           }
 
-          // Safe references fallback if profile joined isn't populated
           const posterName = item.profiles?.name || "User";
           const posterPic = item.profiles?.profile_pic || null;
 
@@ -159,7 +172,7 @@ export default function CategoryView() {
                 onPress={() => toggleAcceptTask(item.id, item.accepted_by)}
                 disabled={disabled}
               >
-                <Text style={styles.btnText, { color : textColor}}>{buttonText}</Text>
+                <Text style={[styles.btnText, { color: textColor }]}>{buttonText}</Text>
               </TouchableOpacity>
             </View>
           );

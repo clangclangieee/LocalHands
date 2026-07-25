@@ -155,7 +155,7 @@ export default function ChatScreen() {
                   )}
                   <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
                     <Text style={styles.messageText}>{msg.text}</Text>
-                    <Text style={styles.timestamp}>{time}</Text>
+                    <Text style={styles.timestamp} numberOfLines={1}>{time}</Text>
                   </View>
                 </View>
               </View>
@@ -231,11 +231,11 @@ const styles = StyleSheet.create({
   otherRow: { justifyContent: "flex-start" },
   menuButton: { padding: 5, marginRight: 5 },
   menuText: { fontSize: 20, color: '#aaa', fontWeight: 'bold' },
-  bubble: { maxWidth: "80%", padding: 12, paddingBottom: 25, borderRadius: 18 },
+  bubble: { maxWidth: "80%", minWidth: 80, padding: 12, paddingBottom: 25, borderRadius: 18 },
   myBubble: { backgroundColor: "#DF8F9C", borderBottomRightRadius: 5 },
   otherBubble: { backgroundColor: "#660005", borderBottomLeftRadius: 5 },
   messageText: { fontSize: 15, color: "#FFFF", marginBottom: 2 },
-  timestamp: { fontSize: 10, color: "#FFFF", position: 'absolute', bottom: 8, right: 12 },
+  timestamp: { fontSize: 10, color: "#FFFF", position: 'absolute', bottom: 8, right: 12, width: 60, textAlign: 'right' },
   dateHeader: { textAlign: 'center', fontSize: 12, color: '#888', marginVertical: 15, fontWeight: 'bold' },
   inputContainer: { flexDirection: "row", padding: 10, borderTopWidth: 1, borderColor: "#eee", backgroundColor: "#DF8F9C" },
   input: { flex: 1, backgroundColor: "#FFFF", borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, minHeight: 40, maxHeight: 100 },

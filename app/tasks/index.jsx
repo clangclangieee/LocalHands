@@ -10,7 +10,6 @@ export default function Index() {
   const [currentUser, setCurrentUser] = useState(null);
   const router = useRouter();
   
-  // Use a ref to keep track of the channel so we don't duplicate it
   const channelRef = useRef(null);
 
   const fetchChores = async () => {
@@ -24,7 +23,6 @@ export default function Index() {
           profile_pic
         )
       `)
-      // Updated to filter by status instead of the boolean 'completed'
       .neq("status", "completed")
       .order("created_at", { ascending: false });
 
@@ -43,23 +41,34 @@ export default function Index() {
 
       fetchChores();
 
-      // Only create the channel if it doesn't already exist
       if (!channelRef.current) {
         channelRef.current = supabase
           .channel("public:chores")
           .on(
             "postgres_changes", 
             { event: "*", schema: "public", table: "chores" }, 
-            () => { fetchChores(); }
+            (payload) => {
+              // Update state locally when real-time updates arrive
+              if (payload.eventType === "UPDATE") {
+                setChoresWithUser((prev) =>
+                  prev.map((chore) =>
+                    chore.id === payload.new.id
+                      ? { ...chore, ...payload.new }
+                      : chore
+                  )
+                );
+              } else {
+                fetchChores();
+              }
+            }
           )
           .subscribe();
       }
 
-      // Cleanup when the screen loses focus
       return () => {
         if (channelRef.current) {
           supabase.removeChannel(channelRef.current);
-          channelRef.current = null; // Reset the ref so it can be re-created on next focus
+          channelRef.current = null;
         }
       };
     }, [])
@@ -70,21 +79,36 @@ export default function Index() {
   };
 
   const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
-    try {
-      if (!currentUser) return Alert.alert("Error", "Login to accept tasks");
+    if (!currentUser) return Alert.alert("Error", "Login to accept tasks");
 
-      if (currentAcceptedBy === currentUser.id) {
-        const { error } = await supabase.from("chores").update({ accepted_by: null }).eq("id", choreId);
-        if (error) throw error;
-        Alert.alert("Task Unaccepted");
-      } else if (!currentAcceptedBy) {
-        const { error } = await supabase.from("chores").update({ accepted_by: currentUser.id }).eq("id", choreId);
-        if (error) throw error;
-        Alert.alert("Task Accepted!");
-      } else {
-        Alert.alert("Task Already Accepted");
-      }
+    const newAcceptedBy = currentAcceptedBy === currentUser.id ? null : currentUser.id;
+
+    if (currentAcceptedBy && currentAcceptedBy !== currentUser.id) {
+      return Alert.alert("Task Already Accepted");
+    }
+
+    // 1. Optimistic Update: Reflect changes in state immediately
+    setChoresWithUser((prev) =>
+      prev.map((chore) =>
+        chore.id === choreId ? { ...chore, accepted_by: newAcceptedBy } : chore
+      )
+    );
+
+    // 2. Perform DB operation in background
+    try {
+      const { error } = await supabase
+        .from("chores")
+        .update({ accepted_by: newAcceptedBy })
+        .eq("id", choreId);
+
+      if (error) throw error;
     } catch (e) {
+      // 3. Roll back if DB update fails
+      setChoresWithUser((prev) =>
+        prev.map((chore) =>
+          chore.id === choreId ? { ...chore, accepted_by: currentAcceptedBy } : chore
+        )
+      );
       Alert.alert("Error", e.message);
     }
   };
