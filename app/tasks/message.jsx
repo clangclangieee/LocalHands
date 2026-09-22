@@ -123,12 +123,12 @@ export default function MessagePreview() {
   }, []);
 
   const openChat = async (chatId) => {
-    // Optimistically update UI so it immediately loses italic styling when clicked
+    // Optimistically update UI so it immediately loses unseen styling when clicked
     setChats((prev) =>
       prev.map((c) => (c.chatId === chatId ? { ...c, isUnseen: false } : c))
     );
 
-    // Optionally mark messages as read in Supabase when opening the chat
+    // Mark messages as read in Supabase when opening the chat
     await supabase
       .from("messages")
       .update({ is_read: true })
@@ -163,83 +163,115 @@ export default function MessagePreview() {
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.header}>Chats</Text>
-      <ScrollView contentContainerStyle={{ padding: 10 }}>
-        {chats.map((chat) => (
-          <View key={chat.chatId} style={styles.chatCard}>
-            <TouchableOpacity
-              style={styles.chatLeft}
-              onPress={() => openChat(chat.chatId)}
-            >
-              <Image
-                source={
-                  chat.profilePic
-                    ? { uri: chat.profilePic }
-                    : require("../../assets/default-avatar.png")
-                }
-                style={styles.profilePic}
-              />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <View style={styles.chatHeader}>
-                  <Text style={styles.userName}>{chat.userName}</Text>
-                  <Text style={styles.timestamp}>
-                    {formatTime(chat.timestamp)}
+
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {chats.length === 0 ? (
+          <Text style={styles.empty}>No messages yet.</Text>
+        ) : (
+          chats.map((chat) => (
+            <View key={chat.chatId} style={styles.chatCard}>
+              <TouchableOpacity
+                style={styles.chatLeft}
+                onPress={() => openChat(chat.chatId)}
+                activeOpacity={0.8}
+              >
+                {chat.profilePic ? (
+                  <Image source={{ uri: chat.profilePic }} style={styles.profilePic} />
+                ) : (
+                  <View style={styles.picFallback}>
+                    <Text>👤</Text>
+                  </View>
+                )}
+
+                <View style={styles.textContainer}>
+                  <View style={styles.chatHeader}>
+                    <Text style={styles.userName}>{chat.userName}</Text>
+                    <Text style={styles.timestamp}>
+                      {formatTime(chat.timestamp)}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.lastMessage,
+                      chat.isUnseen && styles.unseenMessage,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {chat.lastMessage}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.lastMessage,
-                    chat.isUnseen && styles.unseenMessage, // Apply italic & bold styling if unseen
-                  ]}
-                  numberOfLines={1}
-                >
-                  {chat.lastMessage}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.deleteBtn}
-              onPress={() => deleteChat(chat.chatId)}
-            >
-              <Text style={styles.deleteText}>Clear</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => deleteChat(chat.chatId)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFF" },
+  container: { flex: 1, backgroundColor: "#F8F9FA" },
   header: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: "bold",
     marginTop: 40,
     marginBottom: 20,
     textAlign: "center",
+    color: "#333333",
   },
+  scrollContent: { padding: 20, paddingTop: 10 },
+  empty: { textAlign: "center", marginTop: 40, color: "#888888", fontSize: 15 },
+
   chatCard: {
     flexDirection: "row",
     alignItems: "center",
-    justify: "space-between",
+    justifyContent: "space-between",
     padding: 15,
     backgroundColor: "#DF8F9C",
-    borderRadius: 10,
-    marginBottom: 10,
+    borderRadius: 16,
+    marginBottom: 12,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   chatLeft: { flexDirection: "row", flex: 1, alignItems: "center" },
-  profilePic: { width: 50, height: 50, borderRadius: 25 },
-  chatHeader: { flexDirection: "row", justifyContent: "space-between" },
-  userName: { fontWeight: "bold", fontSize: 16, color: "#FFFF" },
-  timestamp: { fontSize: 12, color: "#555" },
-  lastMessage: { fontSize: 14, color: "#333" },
-  // Style applied specifically to unread messages:
-  unseenMessage: { fontStyle: "italic", fontWeight: "bold", color: "#FFFF" },
-  deleteBtn: {
-    marginLeft: 10,
+  
+  profilePic: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
+  picFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 10,
+    marginRight: 12,
   },
-  deleteText: { color: "#FF3333", fontWeight: "bold" },
+
+  textContainer: { flex: 1, marginRight: 8 },
+  chatHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  userName: { fontWeight: "bold", fontSize: 16, color: "#660005" },
+  timestamp: { fontSize: 12, color: "#660005", opacity: 0.8 },
+
+  lastMessage: { fontSize: 14, color: "#660005", opacity: 0.9 },
+  unseenMessage: { fontStyle: "italic", fontWeight: "bold", opacity: 1 },
+
+  deleteBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteText: { color: "#660005", fontWeight: "bold", fontSize: 12 },
 });

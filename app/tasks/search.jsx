@@ -34,7 +34,6 @@ export default function Search() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        // Look up the "profiles" table instead of "users"
         const { data, error } = await supabase.from("profiles").select("*");
         if (data) setUsers(data);
       } catch (err) {
@@ -63,10 +62,11 @@ export default function Search() {
         <TextInput
           style={styles.input}
           placeholder="Search categories, name..."
+          placeholderTextColor="#888888"
           value={query}
           onChangeText={setQuery}
         />
-        <Ionicons name="search" size={20} color="#777" />
+        <Ionicons name="search" size={20} color="#660005" />
       </View>
 
       <FlatList
@@ -74,6 +74,7 @@ export default function Search() {
         numColumns={3}
         keyExtractor={(item) => item.id}
         columnWrapperStyle={styles.row}
+        keyboardShouldPersistTaps="always"
         ListFooterComponent={
           <>
             {query.length > 0 && filteredUsers.length > 0 && (
@@ -82,8 +83,7 @@ export default function Search() {
                 {filteredUsers.map((item) => (
                   <View key={item.id} style={styles.userCard}>
                     <View style={styles.posterHeader}>
-                      <TouchableOpacity onPress={() => openProfile(item.id)}>
-                        {/* Adjusted property mapping from profilePic to profile_pic */}
+                      <TouchableOpacity onPress={() => openProfile(item.id)} activeOpacity={0.8}>
                         {item.profile_pic ? (
                           <Image source={{ uri: item.profile_pic }} style={styles.posterPic} />
                         ) : (
@@ -92,7 +92,7 @@ export default function Search() {
                           </View>
                         )}
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => openProfile(item.id)}>
+                      <TouchableOpacity onPress={() => openProfile(item.id)} activeOpacity={0.8}>
                         <Text style={styles.userName}>
                           {item.name || "No Name"}
                         </Text>
@@ -131,19 +131,70 @@ export default function Search() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFF", padding: 20 },
-  searchWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#DF8F9C", borderRadius: 14, padding: 12, marginBottom: 20, marginTop: 40 },
-  input: { flex: 1, fontSize: 16, marginRight: 8 },
+  container: { flex: 1, backgroundColor: "#F8F9FA", padding: 20 },
+  
+  searchWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 20,
+    marginTop: 20,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+  },
+  input: { flex: 1, fontSize: 16, marginRight: 8, color: "#333333" },
+
   row: { justifyContent: "center" },
-  card: { backgroundColor: "#DF8F9C", margin: 6, borderRadius: 14, alignItems: "center", justifyContent: "center", height: 110, width: 110 },
+
+  card: {
+    backgroundColor: "#DF8F9C",
+    margin: 6,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    height: 110,
+    width: 110,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
   pressed: { transform: [{ scale: 0.95 }], opacity: 0.85 },
   iconWrapper: { width: 40, height: 40, alignItems: "center", justifyContent: "center", marginBottom: 6 },
   icon: { width: 35, height: 35, resizeMode: "contain" },
-  label: { fontSize: 12, fontWeight: "600", textAlign: "center", marginTop: 10 },
-  sectionTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10, marginLeft: 8 },
-  userCard: { backgroundColor: "#DF8F9C", padding: 12, borderRadius: 12, marginBottom: 10 },
+  label: { fontSize: 12, fontWeight: "bold", textAlign: "center", color: "#660005" },
+
+  sectionTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10, marginLeft: 8, color: "#333333" },
+  userCard: {
+    backgroundColor: "#DF8F9C",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
   posterHeader: { flexDirection: "row", alignItems: "center" },
   posterPic: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
-  picFallback: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#EEE", justifyContent: "center", alignItems: "center", marginRight: 10 },
-  userName: { fontWeight: "bold", color: "#660005", fontSize: 14 }
+  picFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  userName: { fontWeight: "bold", color: "#660005", fontSize: 14 },
 });

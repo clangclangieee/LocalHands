@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
-  Modal
+  Modal,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "../../supabaseConfig";
@@ -19,6 +19,7 @@ export default function UserProfile() {
   const router = useRouter();
 
   const [userData, setUserData] = useState(null);
+  const [helperProfile, setHelperProfile] = useState(null);
   const [postedTasks, setPostedTasks] = useState([]);
   const [acceptedTasks, setAcceptedTasks] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -33,7 +34,9 @@ export default function UserProfile() {
 
   useEffect(() => {
     const fetchAuthUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       setCurrentUser(user);
     };
     fetchAuthUser();
@@ -42,21 +45,41 @@ export default function UserProfile() {
   const fetchUserDataBlocks = async () => {
     if (!userId) return;
     try {
-      const userProfile = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+      // Profile Info
+      const userProfile = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
       if (userProfile.data) setUserData(userProfile.data);
 
-      const pTasks = await supabase.from("chores").select("*").eq("user_id", userId);
+      // Helper Application Info
+      const helperData = await supabase
+        .from("applicants")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (helperData.data) setHelperProfile(helperData.data);
+
+      // Posted Tasks with accepted user details joined
+      const pTasks = await supabase
+        .from("chores")
+        .select("*, acceptor:profiles!accepted_by(name)")
+        .eq("user_id", userId);
       if (pTasks.data) setPostedTasks(pTasks.data);
 
+      // Accepted Tasks
       const aTasks = await supabase.from("chores").select("*").eq("accepted_by", userId);
       if (aTasks.data) setAcceptedTasks(aTasks.data);
 
+      // Reviews
       const rView = await supabase.from("reviews").select("*").eq("target_user_id", userId);
       if (rView.data) {
         setReviews(rView.data);
-        const avg = rView.data.length > 0 
-          ? (rView.data.reduce((sum, r) => sum + r.rating, 0) / rView.data.length).toFixed(1)
-          : 0;
+        const avg =
+          rView.data.length > 0
+            ? (rView.data.reduce((sum, r) => sum + r.rating, 0) / rView.data.length).toFixed(1)
+            : 0;
         setAvgRating(avg);
       }
     } catch (err) {
@@ -72,20 +95,16 @@ export default function UserProfile() {
 
       const choresChannel = supabase
         .channel(`profile-chores-${userId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, (payload) => {
-          if (payload.eventType === "UPDATE") {
-            setPostedTasks((prev) =>
-              prev.map((task) => (task.id === payload.new.id ? { ...task, ...payload.new } : task))
-            );
-          } else {
-            fetchUserDataBlocks();
-          }
+        .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, () => {
+          fetchUserDataBlocks();
         })
         .subscribe();
 
       const reviewsChannel = supabase
         .channel(`profile-reviews-${userId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () => fetchUserDataBlocks())
+        .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () =>
+          fetchUserDataBlocks()
+        )
         .subscribe();
 
       return () => {
@@ -95,37 +114,25 @@ export default function UserProfile() {
     }, [userId])
   );
 
-  const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
+  const toggleAcceptTask = async (task) => {
     if (!currentUser) return Alert.alert("Error", "Login to accept tasks");
 
-    const newAcceptedBy = currentAcceptedBy === currentUser.id ? null : currentUser.id;
+    const isAcceptedByMe = task.accepted_by === currentUser.id;
+    const newAcceptedBy = isAcceptedByMe ? null : currentUser.id;
 
-    if (currentAcceptedBy && currentAcceptedBy !== currentUser.id) {
-      return Alert.alert("Task Already Accepted");
+    if (task.accepted_by && !isAcceptedByMe) {
+      return Alert.alert("Notice", "This task is already accepted by someone else.");
     }
 
-    // 1. Optimistic Update: Change button state immediately in local UI
-    setPostedTasks((prev) =>
-      prev.map((task) =>
-        task.id === choreId ? { ...task, accepted_by: newAcceptedBy } : task
-      )
-    );
-
-    // 2. Execute DB update in background
     try {
       const { error } = await supabase
         .from("chores")
         .update({ accepted_by: newAcceptedBy })
-        .eq("id", choreId);
+        .eq("id", task.id);
 
       if (error) throw error;
+      fetchUserDataBlocks();
     } catch (e) {
-      // 3. Rollback state if the update fails
-      setPostedTasks((prev) =>
-        prev.map((task) =>
-          task.id === choreId ? { ...task, accepted_by: currentAcceptedBy } : task
-        )
-      );
       Alert.alert("Error", e.message);
     }
   };
@@ -143,7 +150,8 @@ export default function UserProfile() {
     if (currentUser.id === userId) return Alert.alert("Error", "You cannot chat with yourself");
 
     const currentUserId = currentUser.id;
-    const chatId = currentUserId > userId ? `${currentUserId}_${userId}` : `${userId}_${currentUserId}`;
+    const chatId =
+      currentUserId > userId ? `${currentUserId}_${userId}` : `${userId}_${currentUserId}`;
 
     const { data: chatRoom } = await supabase
       .from("chats")
@@ -154,7 +162,7 @@ export default function UserProfile() {
     if (!chatRoom) {
       await supabase.from("chats").insert({
         id: chatId,
-        participants: [currentUserId, userId]
+        participants: [currentUserId, userId],
       });
     }
 
@@ -164,25 +172,29 @@ export default function UserProfile() {
   const submitReview = async () => {
     if (!currentUser) return Alert.alert("Error", "Log in to submit a review");
     if (!rating) return Alert.alert("Error", "Please select a rating star value");
-    
+
     const alreadyReviewed = reviews.some((r) => r.reviewer_id === currentUser.id);
     if (alreadyReviewed) return Alert.alert("Error", "You have already reviewed this profile.");
 
     try {
-      const { data: profile } = await supabase.from("profiles").select("name, profile_pic").eq("id", currentUser.id).maybeSingle();
-      
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name, profile_pic")
+        .eq("id", currentUser.id)
+        .maybeSingle();
+
       const { error } = await supabase.from("reviews").insert({
         reviewer_id: currentUser.id,
         reviewer_name: profile?.name || "Anonymous User",
         reviewer_pic: profile?.profile_pic || null,
         target_user_id: userId,
         rating: parseInt(rating),
-        comment: comment.trim()
+        comment: comment.trim(),
       });
 
       if (error) throw error;
 
-      setRating(0); 
+      setRating(0);
       setComment("");
       Alert.alert("Success", "Review submitted successfully!");
       await fetchUserDataBlocks();
@@ -197,10 +209,10 @@ export default function UserProfile() {
       const { error } = await supabase.from("reports").insert({
         reporter_id: currentUser.id,
         reported_user_id: userId,
-        reason: reportReason.trim()
+        reason: reportReason.trim(),
       });
       if (error) throw error;
-      
+
       setReportModalVisible(false);
       setReportReason("");
       Alert.alert("Report Filed", "Thank you, this report will be evaluated by staff administrators.");
@@ -218,8 +230,10 @@ export default function UserProfile() {
   }
 
   return (
-    <ScrollView style={{ backgroundColor: "#FFFF" }}>
+    <ScrollView style={styles.scrollBackground}>
       <View style={styles.container}>
+        
+        {/* Navigation Bar */}
         <View style={styles.topButtons}>
           <TouchableOpacity style={styles.backBtn} onPress={handleGoBack}>
             <Text style={styles.backText}>← Back</Text>
@@ -232,129 +246,246 @@ export default function UserProfile() {
           )}
         </View>
 
-        <View style={styles.avatar}>
-          {userData.profile_pic ? (
-            <Image source={{ uri: userData.profile_pic }} style={styles.avatarImage} />
-          ) : <Text style={{ fontSize: 50 }}>👤</Text>}
+        {/* User Profile Floating Card */}
+        <View style={styles.floatingCard}>
+          <View style={styles.avatar}>
+            {userData.profile_pic ? (
+              <Image source={{ uri: userData.profile_pic }} style={styles.avatarImage} />
+            ) : (
+              <Text style={{ fontSize: 40 }}>👤</Text>
+            )}
+          </View>
+
+          <Text style={styles.nameText}>{userData.name || "User Profile"}</Text>
+
+          {userData.phone && <Text style={styles.numText}>📞 {userData.phone}</Text>}
+
+          <Text style={styles.bioText}>{userData.bio || "No biography info set."}</Text>
+
+          <Text style={styles.ratingText}>
+            ⭐ {avgRating} ({reviews.length} reviews)
+          </Text>
+
+          {currentUser?.id !== userId && (
+            <TouchableOpacity style={styles.btnPrimary} onPress={goToChat}>
+              <Text style={styles.btnPrimaryText}>MESSAGE</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        <Text style={styles.name}>{userData.name || "User Profile"}</Text>
-        
-        {userData.phone && <Text style={styles.phone}>📞 {userData.phone}</Text>}
-        
-        <Text style={styles.bio}>{userData.bio || "No biography info set."}</Text>
+        {/* HELPER PROFILE SECTION */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Helper Profile</Text>
+          {helperProfile ? (
+            <View style={styles.floatingCard}>
+              <Text style={styles.nameText}>{helperProfile.full_name || userData.name}</Text>
 
-        <Text style={styles.rating}>
-          ⭐ {avgRating} ({reviews.length} reviews)
-        </Text>
+              <Text style={styles.fieldLabel}>Selected Skill(s):</Text>
+              <View style={styles.skillsContainer}>
+                {Array.isArray(helperProfile.skills) ? (
+                  helperProfile.skills.map((skill, index) => (
+                    <View key={index} style={styles.skillChip}>
+                      <Text style={styles.skillText}>{skill}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.fieldValue}>{helperProfile.skills || "None listed"}</Text>
+                )}
+              </View>
 
-        {currentUser?.id !== userId && (
-          <TouchableOpacity style={styles.messageBtn} onPress={goToChat}>
-            <Text style={styles.btnText}>MESSAGE</Text>
-          </TouchableOpacity>
-        )}
+              <Text style={styles.fieldLabel}>Experience / Qualifications:</Text>
+              <Text style={styles.fieldValue}>
+                {helperProfile.experience || "No experience details added"}
+              </Text>
 
+              <Text style={styles.fieldLabel}>Contact Info:</Text>
+              <Text style={styles.fieldValue}>
+                {helperProfile.contact_info || userData.phone || "No contact info listed"}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.floatingCardEmpty}>
+              <Text style={{ color: "#660005", textAlign: "center", fontWeight: "500" }}>
+                This user has not posted a Helper Application yet.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* LEAVE A REVIEW SECTION */}
         {currentUser?.id !== userId && (
           <View style={styles.section}>
-            <Text style={styles.title}>Leave a Review</Text>
-            <View style={{ flexDirection: "row", marginVertical: 10 }}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity key={star} onPress={() => setRating(star)}>
-                  <Text style={{ fontSize: 30 }}>{star <= rating ? "⭐" : "☆"}</Text>
-                </TouchableOpacity>
-              ))}
+            <Text style={styles.sectionTitle}>Leave a Review</Text>
+            <View style={styles.floatingCard}>
+              <View style={{ flexDirection: "row", marginBottom: 12 }}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                    <Text style={{ fontSize: 28, marginHorizontal: 2 }}>
+                      {star <= rating ? "⭐" : "☆"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TextInput
+                placeholder="Write a review..."
+                placeholderTextColor="rgba(102, 0, 5, 0.5)"
+                value={comment}
+                onChangeText={setComment}
+                style={styles.floatingInput}
+                multiline
+              />
+
+              <TouchableOpacity style={styles.btnPrimary} onPress={submitReview}>
+                <Text style={styles.btnPrimaryText}>SUBMIT REVIEW</Text>
+              </TouchableOpacity>
             </View>
-
-            <TextInput
-              placeholder="Write a review..."
-              value={comment}
-              onChangeText={setComment}
-              style={styles.input}
-            />
-
-            <TouchableOpacity style={styles.messageBtn} onPress={submitReview}>
-              <Text style={styles.btnText}>SUBMIT REVIEW</Text>
-            </TouchableOpacity>
           </View>
         )}
 
+        {/* REVIEWS LIST */}
         <View style={styles.section}>
-          <Text style={styles.title}>Reviews</Text>
+          <Text style={styles.sectionTitle}>Reviews</Text>
           {reviews.length === 0 ? (
             <Text style={styles.emptyText}>No reviews yet.</Text>
           ) : (
             reviews.map((r) => (
-              <View key={r.id} style={styles.card}>
+              <View key={r.id} style={styles.floatingMiniCard}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   {r.reviewer_pic ? (
                     <Image source={{ uri: r.reviewer_pic }} style={styles.reviewPic} />
-                  ) : <Text style={{ marginRight: 10, fontSize: 20 }}>👤</Text>}
+                  ) : (
+                    <Text style={{ marginRight: 10, fontSize: 24 }}>👤</Text>
+                  )}
                   <View>
-                    <Text style={{ fontWeight: "bold" }}>{r.reviewer_name || "User"}</Text>
+                    <Text style={styles.reviewerName}>{r.reviewer_name || "User"}</Text>
                     <Text>{"⭐".repeat(r.rating)}</Text>
                   </View>
                 </View>
-                {r.comment ? <Text style={{ marginTop: 5, color: "#444" }}>{r.comment}</Text> : null}
+                {r.comment ? (
+                  <Text style={styles.reviewComment}>{r.comment}</Text>
+                ) : null}
               </View>
             ))
           )}
         </View>
 
+        {/* POSTED TASKS */}
         <View style={styles.section}>
-          <Text style={styles.title}>Posted Tasks</Text>
-          {postedTasks.length === 0 ? <Text style={styles.emptyText}>No posted tasks.</Text> : postedTasks.map((task) => (
-            <View key={task.id} style={styles.card}>
-              <Text style={{ fontWeight: "bold" }}>{task.category}</Text>
-              <Text style={{ color: "#555", marginVertical: 2 }}>{task.description}</Text>
-              {task.location && <Text style={{ fontSize: 12, color: "#666" }}>📍 {task.location}</Text>}
-              <Text style={{ color: "green", fontWeight: "bold", marginTop: 2 }}>₱{task.budget}</Text>
-              
-              {currentUser?.id !== userId && (
-                <TouchableOpacity 
-                  style={[styles.acceptBtn, { backgroundColor: task.accepted_by === currentUser?.id ? "#FFF" : "#660005" }]}
-                  onPress={() => toggleAcceptTask(task.id, task.accepted_by)}
-                >
-                  <Text style={{ color: task.accepted_by === currentUser?.id ? "#660005" : "#FFF", fontWeight: "bold" }}>
-                    {task.accepted_by === currentUser?.id ? "Unaccept Task" : 
-                     task.accepted_by ? "Already Accepted" : "Accept Task"}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ))}
+          <Text style={styles.sectionTitle}>Posted Tasks</Text>
+          {postedTasks.length === 0 ? (
+            <Text style={styles.emptyText}>No posted tasks.</Text>
+          ) : (
+            postedTasks.map((task) => {
+              const isOwner = currentUser?.id === userId;
+              const isAcceptedByMe = task.accepted_by === currentUser?.id;
+              const isAcceptedByOther = task.accepted_by && !isAcceptedByMe;
+              const acceptorName = task.acceptor?.name || "someone";
+
+              return (
+                <View key={task.id} style={styles.floatingMiniCard}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={styles.choreCategory}>{task.category}</Text>
+                    <Text style={styles.choreDesc}>{task.description}</Text>
+                    {task.location && (
+                      <Text style={{ fontSize: 12, color: "#660005", opacity: 0.8 }}>
+                        📍 {task.location}
+                      </Text>
+                    )}
+                    <Text style={styles.choreBudget}>₱{task.budget}</Text>
+                  </View>
+
+                  {/* Accept Button Logic */}
+                  {isOwner ? (
+                    <View style={styles.badgeContainer}>
+                      <Text style={styles.badgeText}>
+                        {task.accepted_by
+                          ? `Accepted by ${acceptorName}`
+                          : "Pending Helper"}
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      disabled={isAcceptedByOther}
+                      style={[
+                        styles.btnOutlineSmall,
+                        isAcceptedByMe && styles.btnAcceptedMe,
+                        isAcceptedByOther && styles.btnAcceptedOther,
+                      ]}
+                      onPress={() => toggleAcceptTask(task)}
+                    >
+                      <Text
+                        style={[
+                          styles.btnOutlineText,
+                          (isAcceptedByMe || isAcceptedByOther) && { color: "#FFFFFF" },
+                        ]}
+                      >
+                        {isAcceptedByMe
+                          ? "Cancel Acceptance"
+                          : isAcceptedByOther
+                          ? `Accepted by ${acceptorName}`
+                          : "Accept Task"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })
+          )}
         </View>
 
+        {/* ACCEPTED TASKS */}
         <View style={styles.section}>
-          <Text style={styles.title}>Accepted Tasks</Text>
-          {acceptedTasks.length === 0 ? <Text style={styles.emptyText}>No accepted tasks.</Text> : acceptedTasks.map((task) => (
-            <View key={task.id} style={styles.card}>
-              <Text style={{ fontWeight: "bold" }}>{task.category}</Text>
-              <Text style={{ color: "#555", marginVertical: 2 }}>{task.description}</Text>
-              {task.location && <Text style={{ fontSize: 12, color: "#666" }}>📍 {task.location}</Text>}
-              <Text style={{ color: "green", fontWeight: "bold", marginTop: 2 }}>₱{task.budget}</Text>
-            </View>
-          ))}
+          <Text style={styles.sectionTitle}>Accepted Tasks</Text>
+          {acceptedTasks.length === 0 ? (
+            <Text style={styles.emptyText}>No accepted tasks.</Text>
+          ) : (
+            acceptedTasks.map((task) => (
+              <View key={task.id} style={styles.floatingMiniCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.choreCategory}>{task.category}</Text>
+                  <Text style={styles.choreDesc}>{task.description}</Text>
+                  {task.location && (
+                    <Text style={{ fontSize: 12, color: "#660005", opacity: 0.8 }}>
+                      📍 {task.location}
+                    </Text>
+                  )}
+                  <Text style={styles.choreBudget}>₱{task.budget}</Text>
+                </View>
+              </View>
+            ))
+          )}
         </View>
       </View>
 
+      {/* REPORT MODAL */}
       <Modal visible={reportModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Report User</Text>
-            <Text style={styles.label}>Please clarify the exact details of the incident or problem below:</Text>
+            <Text style={styles.label}>
+              Please clarify the exact details of the incident or problem below:
+            </Text>
             <TextInput
-              style={[styles.input, { height: 90, borderWidth: 1, borderColor: "#DDD" }]}
+              style={[styles.floatingInput, { height: 90, backgroundColor: "#F8F9FA" }]}
               placeholder="Reason for report..."
+              placeholderTextColor="#888888"
               multiline
               value={reportReason}
               onChangeText={setReportReason}
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#DF8F9C" }]} onPress={() => { setReportModalVisible(false); setReportReason(""); }}>
-                <Text style={styles.btnText}>Cancel</Text>
+              <TouchableOpacity
+                style={styles.modalBtnCancel}
+                onPress={() => {
+                  setReportModalVisible(false);
+                  setReportReason("");
+                }}
+              >
+                <Text style={{ color: "#555555", fontWeight: "bold" }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#660005" }]} onPress={handleReportUserSubmit}>
-                <Text style={styles.btnText}>Submit Report</Text>
+              <TouchableOpacity style={styles.modalBtnSave} onPress={handleReportUserSubmit}>
+                <Text style={styles.btnPrimaryText}>Submit Report</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -365,32 +496,176 @@ export default function UserProfile() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFF" },
-  container: { padding: 20, alignItems: "center" },
-  topButtons: { flexDirection: "row", justifyContent: "space-between", width: "100%", marginBottom: 10, zIndex: 10, elevation: 10 },
-  backBtn: { padding: 15, zIndex: 20 },
+  scrollBackground: { backgroundColor: "#F8F9FA" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8F9FA" },
+  container: { flex: 1, alignItems: "center", padding: 16, paddingTop: 10 },
+
+  topButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    marginBottom: 10,
+  },
+  backBtn: { paddingVertical: 10, paddingRight: 15 },
   backText: { fontSize: 16, color: "#660005", fontWeight: "bold" },
-  reportBtn: { backgroundColor: "#660005", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  reportText: { color: "#FFFF", fontWeight: "bold" },
-  avatar: { width: 120, height: 120, borderRadius: 60, backgroundColor: "#660005", justifyContent: "center", alignItems: "center", marginBottom: 15, elevation: 3, overflow: "hidden" },
-  avatarImage: { width: "100%", height: "100%", borderRadius: 60 },
-  name: { fontSize: 22, fontWeight: "bold" },
-  phone: { fontSize: 16, color: "#660005", fontWeight: "600", marginBottom: 5 },
-  bio: { color: "#666", marginBottom: 10, textAlign: "center" },
-  rating: { marginBottom: 15, color: "#444" },
-  messageBtn: { backgroundColor: "#660005", padding: 12, borderRadius: 20, width: 180, alignItems: "center", marginBottom: 15 },
-  btnText: { color: "#FFFF", fontWeight: "bold" },
-  section: { width: "100%", marginTop: 20 },
-  title: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-  card: { backgroundColor: "#DF8F9C", padding: 12, borderRadius: 12, marginBottom: 10, elevation: 2 },
-  input: { backgroundColor: "#DF8F9C", width: "100%", padding: 12, borderRadius: 10, marginBottom: 10 },
-  reviewPic: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
-  emptyText: { color: "#666", fontStyle: "italic", paddingLeft: 5 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  modalContent: { backgroundColor: "#FFFF", width: "85%", padding: 20, borderRadius: 20, elevation: 10 },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10, textAlign: "center", color: "#660005" },
-  label: { fontSize: 13, color: "#555", marginBottom: 10 },
-  modalActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 },
-  modalBtn: { padding: 12, borderRadius: 20, width: "47%", alignItems: "center" },
-  acceptBtn: { marginTop: 10, padding: 10, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: "#660005" }
+  reportBtn: {
+    backgroundColor: "#660005",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  reportText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 13 },
+
+  floatingCard: {
+    backgroundColor: "#DF8F9C",
+    width: "100%",
+    padding: 20,
+    borderRadius: 24,
+    alignItems: "center",
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.4)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  floatingCardEmpty: {
+    backgroundColor: "rgba(223, 143, 156, 0.25)",
+    width: "100%",
+    padding: 20,
+    borderRadius: 20,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#DF8F9C",
+  },
+  floatingMiniCard: {
+    backgroundColor: "#DF8F9C",
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.4)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+
+  avatar: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.6)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+    overflow: "hidden",
+  },
+  avatarImage: { width: "100%", height: "100%" },
+
+  nameText: { fontSize: 22, fontWeight: "bold", color: "#660005", marginBottom: 2 },
+  numText: { fontSize: 13, color: "#660005", opacity: 0.8, marginBottom: 6, fontWeight: "600" },
+  bioText: { fontSize: 14, color: "#660005", opacity: 0.9, textAlign: "center", marginBottom: 8 },
+  ratingText: { fontSize: 13, color: "#660005", fontWeight: "bold", marginBottom: 12 },
+
+  floatingInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+    width: "100%",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+    color: "#660005",
+    fontWeight: "500",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.6)",
+  },
+
+  btnPrimary: {
+    backgroundColor: "#660005",
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 20,
+    elevation: 3,
+  },
+  btnPrimaryText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 13 },
+  btnOutlineSmall: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    justify: "center",
+  },
+  btnOutlineText: {
+    color: "#660005",
+    fontWeight: "bold",
+    fontSize: 11,
+    textAlign: "center",
+  },
+  btnAcceptedMe: {
+    backgroundColor: "#660005",
+  },
+  btnAcceptedOther: {
+    backgroundColor: "rgba(102, 0, 5, 0.5)",
+  },
+
+  badgeContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  badgeText: {
+    color: "#660005",
+    fontWeight: "bold",
+    fontSize: 11,
+  },
+
+  section: { width: "100%", marginBottom: 15 },
+  sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#333333", marginBottom: 12 },
+
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#660005",
+    opacity: 0.8,
+    marginTop: 10,
+    alignSelf: "flex-start",
+  },
+  fieldValue: { fontSize: 14, color: "#660005", marginTop: 2, fontWeight: "500", alignSelf: "flex-start" },
+  skillsContainer: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4, alignSelf: "flex-start" },
+  skillChip: { backgroundColor: "#FFFFFF", paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12 },
+  skillText: { color: "#660005", fontSize: 12, fontWeight: "bold" },
+
+  reviewerName: { fontWeight: "bold", color: "#660005", fontSize: 14 },
+  reviewComment: { marginTop: 6, color: "#660005", opacity: 0.9, fontSize: 13 },
+  reviewPic: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+
+  choreCategory: { fontWeight: "bold", fontSize: 15, color: "#660005" },
+  choreDesc: { fontSize: 13, color: "#660005", opacity: 0.9, marginVertical: 2 },
+  choreBudget: { color: "#2E7D32", fontWeight: "bold", fontSize: 14, marginTop: 2 },
+
+  emptyText: { color: "#888888", fontStyle: "italic", paddingLeft: 5 },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
+  modalContent: { backgroundColor: "#FFFFFF", width: "85%", padding: 20, borderRadius: 20, elevation: 5 },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#660005", marginBottom: 10, textAlign: "center" },
+  label: { fontSize: 12, color: "#555555", marginBottom: 10 },
+  modalActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 10, gap: 10 },
+  modalBtnCancel: { padding: 10, borderRadius: 10, flex: 1, alignItems: "center", backgroundColor: "#EEEEEE" },
+  modalBtnSave: { padding: 10, borderRadius: 10, flex: 1, alignItems: "center", backgroundColor: "#660005" },
 });
