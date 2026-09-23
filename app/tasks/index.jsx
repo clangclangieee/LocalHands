@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   Image,
   TextInput,
   TouchableOpacity,
@@ -12,6 +12,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  ActivityIndicator,
 } from "react-native";
 import { supabase } from "../../supabaseConfig";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -27,11 +28,10 @@ export default function Index() {
   const [locationFilter, setLocationFilter] = useState("");
   const [budgetFilter, setBudgetFilter] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
-  const router = useRouter();
+  const [loading, setLoading] = useState(true);
 
+  const router = useRouter();
   const slideAnim = useRef(new Animated.Value(0)).current;
-  const choresChannelRef = useRef(null);
-  const applicantsChannelRef = useRef(null);
 
   const switchTab = (tab) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -57,6 +57,7 @@ export default function Index() {
           )
         `)
         .neq("status", "completed")
+        .order("is_boosted", { ascending: false })
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -78,6 +79,7 @@ export default function Index() {
             profile_pic
           )
         `)
+        .order("is_boosted", { ascending: false })
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -87,47 +89,66 @@ export default function Index() {
     }
   };
 
+  // Auth User Fetching
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) setCurrentUser(data.user);
+    });
+  }, []);
+
+  // Fetch data on focus
   useFocusEffect(
     useCallback(() => {
-      supabase.auth.getUser().then(({ data }) => {
-        if (data?.user) setCurrentUser(data.user);
+      let isMounted = true;
+      setLoading(true);
+
+      Promise.all([fetchChores(), fetchApplicants()]).finally(() => {
+        if (isMounted) setLoading(false);
       });
 
-      fetchChores();
-      fetchApplicants();
-
-      if (!choresChannelRef.current) {
-        choresChannelRef.current = supabase
-          .channel("public:chores")
-          .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, () => fetchChores())
-          .subscribe();
-      }
-
-      if (!applicantsChannelRef.current) {
-        applicantsChannelRef.current = supabase
-          .channel("public:applicants")
-          .on("postgres_changes", { event: "*", schema: "public", table: "applicants" }, () => fetchApplicants())
-          .subscribe();
-      }
-
       return () => {
-        if (choresChannelRef.current) supabase.removeChannel(choresChannelRef.current);
-        if (applicantsChannelRef.current) supabase.removeChannel(applicantsChannelRef.current);
+        isMounted = false;
       };
     }, [])
   );
 
+  // Real-time Subscriptions Lifecycle
+  useEffect(() => {
+    const choresChannel = supabase
+      .channel("public:chores")
+      .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, () => fetchChores())
+      .subscribe();
+
+    const applicantsChannel = supabase
+      .channel("public:applicants")
+      .on("postgres_changes", { event: "*", schema: "public", table: "applicants" }, () => fetchApplicants())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(choresChannel);
+      supabase.removeChannel(applicantsChannel);
+    };
+  }, []);
+
   const openProfile = (userId) => router.push(`/profile/${userId}`);
+
+  const handleBoostClick = (item) => {
+    router.push({
+      pathname: "/checkout",
+      params: { itemId: item.id, itemType: activeTab === "Chores" ? "chore" : "applicant" },
+    });
+  };
 
   const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
     if (!currentUser) return Alert.alert("Error", "Login to accept tasks");
-
-    const newAcceptedBy = currentAcceptedBy === currentUser.id ? null : currentUser.id;
 
     if (currentAcceptedBy && currentAcceptedBy !== currentUser.id) {
       return Alert.alert("Task Already Accepted");
     }
 
+    const newAcceptedBy = currentAcceptedBy === currentUser.id ? null : currentUser.id;
+
+    // Optimistic state update
     setChoresWithUser((prev) =>
       prev.map((chore) =>
         chore.id === choreId ? { ...chore, accepted_by: newAcceptedBy } : chore
@@ -142,16 +163,24 @@ export default function Index() {
 
       if (error) throw error;
     } catch (e) {
-      fetchChores();
+      fetchChores(); // Revert on failure
       Alert.alert("Error", e.message);
     }
+  };
+
+  // Helper to check if a boost is currently active
+  const isBoostActive = (item) => {
+    if (!item.is_boosted) return false;
+    if (!item.boosted_until) return true; // Fallback if timestamp not provided
+    return new Date(item.boosted_until) > new Date();
   };
 
   const filteredChores = choresWithUser.filter((chore) => {
     const matchesLocation = locationFilter
       ? chore.location?.toLowerCase().includes(locationFilter.toLowerCase())
       : true;
-    const matchesBudget = budgetFilter ? chore.budget <= parseFloat(budgetFilter) : true;
+    const parsedBudget = parseFloat(budgetFilter);
+    const matchesBudget = !isNaN(parsedBudget) ? chore.budget <= parsedBudget : true;
     return matchesLocation && matchesBudget;
   });
 
@@ -160,10 +189,135 @@ export default function Index() {
     outputRange: ["2%", "50%"],
   });
 
+  const renderChoreItem = ({ item }) => {
+    let buttonColor = "#660005";
+    let textColor = "#DF8F9C";
+    let buttonText = "Accept Task";
+    let disabled = false;
+
+    if (item.accepted_by === currentUser?.id) {
+      buttonColor = "#FFFFFF";
+      textColor = "#660005";
+      buttonText = "Unaccept Task";
+    } else if (item.accepted_by) {
+      buttonColor = "#FFFFFF";
+      textColor = "#660005";
+      buttonText = "Accepted by Someone";
+      disabled = true;
+    }
+
+    const isOwner = currentUser?.id === item.user_id;
+    const boosted = isBoostActive(item);
+
+    return (
+      <View style={[styles.card, boosted && styles.urgentCard]}>
+        {boosted && (
+          <View style={styles.urgentBadge}>
+            <Text style={styles.urgentBadgeText}>🚨 URGENT</Text>
+          </View>
+        )}
+
+        <View style={styles.posterHeader}>
+          <TouchableOpacity onPress={() => openProfile(item.user_id)}>
+            {item.profiles?.profile_pic ? (
+              <Image source={{ uri: item.profiles.profile_pic }} style={styles.posterPic} />
+            ) : (
+              <View style={styles.picFallback}><Text>👤</Text></View>
+            )}
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={() => openProfile(item.user_id)}>
+              <Text style={styles.realName}>{item.profiles?.name || "User"}</Text>
+            </TouchableOpacity>
+            {item.profiles?.phone && (
+              <Text style={styles.posterPhone}>📞 {item.profiles.phone}</Text>
+            )}
+          </View>
+        </View>
+
+        <Text style={styles.title}>{item.category}</Text>
+        <Text style={styles.bodyText}>{item.description}</Text>
+        <Text style={styles.pay}>💰 ₱{item.budget}</Text>
+        {item.location && <Text style={styles.location}>📍 {item.location}</Text>}
+
+        <TouchableOpacity
+          style={[styles.acceptBtn, { backgroundColor: buttonColor }]}
+          onPress={() => toggleAcceptTask(item.id, item.accepted_by)}
+          disabled={disabled}
+          activeOpacity={0.85}
+        >
+          <Text style={{ fontWeight: "bold", color: textColor }}>{buttonText}</Text>
+        </TouchableOpacity>
+
+        {isOwner && !boosted && (
+          <TouchableOpacity
+            style={styles.boostBtn}
+            onPress={() => handleBoostClick(item)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.boostBtnText}>⚡ Mark as URGENT (Boost to Top)</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  const renderApplicantItem = ({ item }) => {
+    const boosted = isBoostActive(item);
+
+    return (
+      <View style={[styles.card, boosted && styles.boostedCard]}>
+        {boosted && (
+          <View style={styles.boostBadge}>
+            <Text style={styles.boostBadgeText}>⚡ FEATURED HELPER</Text>
+          </View>
+        )}
+
+        <View style={styles.posterHeader}>
+          <TouchableOpacity onPress={() => openProfile(item.user_id)}>
+            {item.profiles?.profile_pic ? (
+              <Image source={{ uri: item.profiles.profile_pic }} style={styles.posterPic} />
+            ) : (
+              <View style={styles.picFallback}><Text>👤</Text></View>
+            )}
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={() => openProfile(item.user_id)}>
+              <Text style={styles.realName}>{item.full_name || item.profiles?.name || "Applicant"}</Text>
+            </TouchableOpacity>
+            {item.contact_info && (
+              <Text style={styles.posterPhone}>📞 {item.contact_info}</Text>
+            )}
+          </View>
+        </View>
+
+        <Text style={styles.title}>🛠 Skills: {item.skills}</Text>
+        <Text style={styles.bodyText}>📝 {item.experience}</Text>
+
+        <TouchableOpacity
+          style={styles.contactBtn}
+          onPress={() => openProfile(item.user_id)}
+          activeOpacity={0.85}
+        >
+          <Text style={{ fontWeight: "bold", color: "#FFFFFF" }}>VIEW PROFILE / CONTACT</Text>
+        </TouchableOpacity>
+
+        {currentUser?.id === item.user_id && !boosted && (
+          <TouchableOpacity
+            style={styles.boostBtn}
+            onPress={() => handleBoostClick(item)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.boostBtnText}>⚡ Boost Profile to Top</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.stickyHeader}>
-        {/* Animated Sliding Pill Switcher */}
         <View style={styles.pillContainer}>
           <Animated.View style={[styles.pillBubble, { left: bubbleLeft }]} />
 
@@ -209,110 +363,34 @@ export default function Index() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.listContent}>
-        {activeTab === "Chores" ? (
-          filteredChores.length === 0 ? (
-            <Text style={styles.emptyText}>No chores available.</Text>
-          ) : (
-            filteredChores.map((item) => {
-              let buttonColor = "#660005";
-              let textColor = "#DF8F9C";
-              let buttonText = "Accept Task";
-              let disabled = false;
-
-              if (item.accepted_by === currentUser?.id) {
-                buttonColor = "#FFFFFF";
-                textColor = "#660005";
-                buttonText = "Unaccept Task";
-              } else if (item.accepted_by) {
-                buttonColor = "#FFFFFF";
-                textColor = "#660005";
-                buttonText = "Accepted by Someone";
-                disabled = true;
-              }
-
-              return (
-                <View key={item.id} style={styles.card}>
-                  <View style={styles.posterHeader}>
-                    <TouchableOpacity onPress={() => openProfile(item.user_id)}>
-                      {item.profiles?.profile_pic ? (
-                        <Image source={{ uri: item.profiles.profile_pic }} style={styles.posterPic} />
-                      ) : (
-                        <View style={styles.picFallback}><Text>👤</Text></View>
-                      )}
-                    </TouchableOpacity>
-                    <View style={{ flex: 1 }}>
-                      <TouchableOpacity onPress={() => openProfile(item.user_id)}>
-                        <Text style={styles.realName}>{item.profiles?.name || "User"}</Text>
-                      </TouchableOpacity>
-                      {item.profiles?.phone && (
-                        <Text style={styles.posterPhone}>📞 {item.profiles.phone}</Text>
-                      )}
-                    </View>
-                  </View>
-
-                  <Text style={styles.title}>{item.category}</Text>
-                  <Text style={styles.bodyText}>{item.description}</Text>
-                  <Text style={styles.pay}>💰 ₱{item.budget}</Text>
-                  {item.location && <Text style={styles.location}>📍 {item.location}</Text>}
-
-                  <TouchableOpacity
-                    style={[styles.acceptBtn, { backgroundColor: buttonColor }]}
-                    onPress={() => toggleAcceptTask(item.id, item.accepted_by)}
-                    disabled={disabled}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={{ fontWeight: "bold", color: textColor }}>{buttonText}</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )
-        ) : (
-          applicantsWithUser.length === 0 ? (
-            <Text style={styles.emptyText}>No helper applications posted yet.</Text>
-          ) : (
-            applicantsWithUser.map((item) => (
-              <View key={item.id} style={styles.card}>
-                <View style={styles.posterHeader}>
-                  <TouchableOpacity onPress={() => openProfile(item.user_id)}>
-                    {item.profiles?.profile_pic ? (
-                      <Image source={{ uri: item.profiles.profile_pic }} style={styles.posterPic} />
-                    ) : (
-                      <View style={styles.picFallback}><Text>👤</Text></View>
-                    )}
-                  </TouchableOpacity>
-                  <View style={{ flex: 1 }}>
-                    <TouchableOpacity onPress={() => openProfile(item.user_id)}>
-                      <Text style={styles.realName}>{item.full_name || item.profiles?.name || "Applicant"}</Text>
-                    </TouchableOpacity>
-                    {item.contact_info && (
-                      <Text style={styles.posterPhone}>📞 {item.contact_info}</Text>
-                    )}
-                  </View>
-                </View>
-
-                <Text style={styles.title}>🛠 Skills: {item.skills}</Text>
-                <Text style={styles.bodyText}>📝 {item.experience}</Text>
-
-                <TouchableOpacity
-                  style={styles.contactBtn}
-                  onPress={() => openProfile(item.user_id)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={{ fontWeight: "bold", color: "#FFFFFF" }}>VIEW PROFILE / CONTACT</Text>
-                </TouchableOpacity>
-              </View>
-            ))
-          )
-        )}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#660005" />
+        </View>
+      ) : activeTab === "Chores" ? (
+        <FlatList
+          data={filteredChores}
+          renderItem={renderChoreItem}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={<Text style={styles.emptyText}>No chores available.</Text>}
+        />
+      ) : (
+        <FlatList
+          data={applicantsWithUser}
+          renderItem={renderApplicantItem}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={<Text style={styles.emptyText}>No helper applications posted yet.</Text>}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8F9FA" },
+  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   stickyHeader: {
     paddingTop: 50,
     paddingHorizontal: 15,
@@ -395,6 +473,48 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 6,
+    position: "relative",
+  },
+  urgentCard: {
+    borderWidth: 2,
+    borderColor: "#FF0000",
+    shadowColor: "#FF0000",
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  urgentBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FF0000",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  urgentBadgeText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  boostedCard: {
+    borderWidth: 2,
+    borderColor: "#FFD700",
+    shadowColor: "#FFD700",
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  boostBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FFD700",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  boostBadgeText: {
+    color: "#000000",
+    fontWeight: "bold",
+    fontSize: 11,
   },
   posterHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   posterPic: { width: 42, height: 42, borderRadius: 21, marginRight: 10 },
@@ -435,5 +555,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
+  },
+  boostBtn: {
+    marginTop: 8,
+    backgroundColor: "#FFD700",
+    padding: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  boostBtnText: {
+    color: "#000000",
+    fontWeight: "bold",
+    fontSize: 13,
   },
 });

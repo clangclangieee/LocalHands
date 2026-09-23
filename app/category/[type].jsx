@@ -39,7 +39,7 @@ export default function CategoryView() {
 
     if (!type) return;
 
-    // Fetch initial chores with profile info
+    // Fetch initial chores with profile info (Boosted first)
     const fetchTasks = async () => {
       const { data, error } = await supabase
         .from("chores")
@@ -47,7 +47,9 @@ export default function CategoryView() {
           *,
           profiles:user_id ( name, profile_pic )
         `)
-        .eq("category", type);
+        .eq("category", type)
+        .order("is_boosted", { ascending: false })
+        .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error fetching category tasks:", error);
@@ -56,7 +58,7 @@ export default function CategoryView() {
       }
     };
 
-    // Fetch initial applicants matching current category in their skills
+    // Fetch initial applicants matching current category in their skills (Boosted first)
     const fetchApplicants = async () => {
       const { data, error } = await supabase
         .from("applicants")
@@ -64,7 +66,9 @@ export default function CategoryView() {
           *,
           profiles:user_id ( name, profile_pic )
         `)
-        .ilike("skills", `%${type}%`);
+        .ilike("skills", `%${type}%`)
+        .order("is_boosted", { ascending: false })
+        .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error fetching category applicants:", error);
@@ -127,6 +131,19 @@ export default function CategoryView() {
 
   const openProfile = (userId) => {
     router.push(`/profile/${userId}`);
+  };
+
+  const handleBoostClick = (item) => {
+    router.push({
+      pathname: "/checkout",
+      params: { itemId: item.id, itemType: activeTab === "Chores" ? "chore" : "applicant" },
+    });
+  };
+
+  const isBoostActive = (item) => {
+    if (!item.is_boosted) return false;
+    if (!item.boosted_until) return true;
+    return new Date(item.boosted_until) > new Date();
   };
 
   const toggleAcceptTask = async (choreId, currentAcceptedBy) => {
@@ -226,9 +243,17 @@ export default function CategoryView() {
 
               const posterName = item.profiles?.name || "User";
               const posterPic = item.profiles?.profile_pic || null;
+              const boosted = isBoostActive(item);
+              const isOwner = currentUserId === item.user_id;
 
               return (
-                <View key={item.id} style={styles.card}>
+                <View key={item.id} style={[styles.card, boosted && styles.urgentCard]}>
+                  {boosted && (
+                    <View style={styles.urgentBadge}>
+                      <Text style={styles.urgentBadgeText}>🚨 URGENT</Text>
+                    </View>
+                  )}
+
                   <View style={styles.posterHeader}>
                     <TouchableOpacity onPress={() => openProfile(item.user_id)}>
                       {posterPic ? (
@@ -261,6 +286,16 @@ export default function CategoryView() {
                   >
                     <Text style={[styles.actionBtnText, { color: textColor }]}>{buttonText}</Text>
                   </TouchableOpacity>
+
+                  {isOwner && !boosted && (
+                    <TouchableOpacity
+                      style={styles.boostBtn}
+                      onPress={() => handleBoostClick(item)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.boostBtnText}>⚡ Mark as URGENT (Boost to Top)</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })
@@ -275,9 +310,17 @@ export default function CategoryView() {
             applicants.map((item) => {
               const posterName = item.profiles?.name || item.full_name || "Applicant";
               const posterPic = item.profiles?.profile_pic || null;
+              const boosted = isBoostActive(item);
+              const isOwner = currentUserId === item.user_id;
 
               return (
-                <View key={item.id} style={styles.card}>
+                <View key={item.id} style={[styles.card, boosted && styles.boostedCard]}>
+                  {boosted && (
+                    <View style={styles.boostBadge}>
+                      <Text style={styles.boostBadgeText}>⚡ FEATURED HELPER</Text>
+                    </View>
+                  )}
+
                   <View style={styles.posterHeader}>
                     <TouchableOpacity onPress={() => openProfile(item.user_id)}>
                       {posterPic ? (
@@ -305,6 +348,16 @@ export default function CategoryView() {
                   >
                     <Text style={styles.actionBtnText}>View Profile</Text>
                   </TouchableOpacity>
+
+                  {isOwner && !boosted && (
+                    <TouchableOpacity
+                      style={styles.boostBtn}
+                      onPress={() => handleBoostClick(item)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.boostBtnText}>⚡ Boost Profile to Top</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })
@@ -395,6 +448,48 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 6,
+    position: "relative",
+  },
+  urgentCard: {
+    borderWidth: 2,
+    borderColor: "#FF0000",
+    shadowColor: "#FF0000",
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  urgentBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FF0000",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  urgentBadgeText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  boostedCard: {
+    borderWidth: 2,
+    borderColor: "#FFD700",
+    shadowColor: "#FFD700",
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  boostBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FFD700",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  boostBadgeText: {
+    color: "#000000",
+    fontWeight: "bold",
+    fontSize: 11,
   },
   posterHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   posterPic: { width: 42, height: 42, borderRadius: 21, marginRight: 12 },
@@ -428,4 +523,16 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   actionBtnText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 15 },
+  boostBtn: {
+    marginTop: 10,
+    backgroundColor: "#FFD700",
+    padding: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  boostBtnText: {
+    color: "#000000",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
 });
